@@ -205,20 +205,45 @@ class OPNsenseAPI:
         params = {"current": 1, "rowCount": limit, "limit": limit}
         return await self._request("GET", path, params=params)
 
+    async def _try_log_paths(self, paths: list, limit: int = 100) -> Any:
+        """Try multiple endpoint paths in order, return the first that succeeds with non-empty data."""
+        last_error = None
+        for path in paths:
+            try:
+                data = await self._get_log(path, limit)
+                # Any successful response wins; lenient because endpoints may be empty
+                if data is not None:
+                    return data
+            except Exception as e:
+                last_error = e
+                continue
+        if last_error:
+            raise last_error
+        return []
+
     async def get_firewall_logs(self, limit: int = 100) -> Any:
         """Firewall log - try new endpoint first, fall back to legacy"""
-        try:
-            return await self._get_log("/diagnostics/firewall/log", limit)
-        except Exception:
-            return await self._get_log("/diagnostics/log/core/firewall", limit)
+        return await self._try_log_paths([
+            "/diagnostics/firewall/log",
+            "/diagnostics/log/core/firewall",
+            "/diagnostics/log/firewall",
+        ], limit)
 
     async def get_system_logs(self, limit: int = 100) -> Any:
         """System log"""
-        return await self._get_log("/diagnostics/log/core/system", limit)
+        return await self._try_log_paths([
+            "/diagnostics/log/core/system",
+            "/diagnostics/log/system",
+            "/diagnostics/log/core/general",
+        ], limit)
 
     async def get_backend_logs(self, limit: int = 100) -> Any:
         """Backend (configd) log"""
-        return await self._get_log("/diagnostics/log/core/configd", limit)
+        return await self._try_log_paths([
+            "/diagnostics/log/core/configd",
+            "/diagnostics/log/configd",
+            "/diagnostics/log/core/backend",
+        ], limit)
 
     # ===== S.M.A.R.T. endpoints (requires os-smart plugin) =====
     async def smart_list(self) -> Dict[str, Any]:

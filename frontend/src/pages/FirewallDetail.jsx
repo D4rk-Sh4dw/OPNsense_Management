@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { firewallsAPI, backupsAPI, updatesAPI } from '../api/client'
 
@@ -24,6 +24,11 @@ export default function FirewallDetail() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+
+  // Log filtering & scroll handling
+  const [logFilter, setLogFilter] = useState({ action: 'all', iface: 'all', search: '' })
+  const logContainerRef = useRef(null)
+  const [autoFollowLogs, setAutoFollowLogs] = useState(true)
 
   useEffect(() => {
     loadAll()
@@ -363,45 +368,22 @@ export default function FirewallDetail() {
       </div>
 
       {/* Gateway Status */}
-      {status?.gateway_status && (
-        <div className="bg-white rounded-xl shadow p-6 mb-8">
-          <h2 className="text-xl font-bold mb-4 text-gray-900">Gateway Status</h2>
-          <pre className="text-xs text-gray-700 overflow-x-auto bg-gray-50 p-4 rounded-lg">
-            {JSON.stringify(status.gateway_status, null, 2)}
-          </pre>
-        </div>
-      )}
+      {status?.gateway_status && <GatewayStatusCard data={status.gateway_status} />}
 
       {/* Live Logs */}
-      <div className="bg-white rounded-xl shadow p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Live Logs</h2>
-          <div className="flex gap-2">
-            {['firewall', 'system', 'backend'].map(t => (
-              <button key={t} onClick={() => setLogType(t)}
-                className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${logType === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {t}
-              </button>
-            ))}
-            <button onClick={loadLogs} className="px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 hover:bg-gray-200">
-              🔄
-            </button>
-          </div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-xs text-green-400">
-          {loadingLogs ? (
-            <p className="text-gray-400">Loading logs...</p>
-          ) : logs.length > 0 ? (
-            logs.map((log, i) => (
-              <div key={i} className="mb-1 whitespace-pre-wrap break-all">
-                {formatLogEntry(log)}
-              </div>
-            ))
-          ) : (
-            <p className="text-gray-400">No log entries found.</p>
-          )}
-        </div>
-      </div>
+      <LiveLogsCard
+        logs={logs}
+        loadingLogs={loadingLogs}
+        logType={logType}
+        setLogType={setLogType}
+        onRefresh={loadLogs}
+        filter={logFilter}
+        setFilter={setLogFilter}
+        autoFollow={autoFollowLogs}
+        setAutoFollow={setAutoFollowLogs}
+        containerRef={logContainerRef}
+        formatLogEntry={formatLogEntry}
+      />
 
       {/* S.M.A.R.T. Disk Health */}
       <div className="bg-white rounded-xl shadow p-6 mt-8">
@@ -567,6 +549,230 @@ function Row({ label, value, mono = false }) {
     <div className="flex justify-between gap-4">
       <dt className="font-semibold text-gray-500 shrink-0">{label}</dt>
       <dd className={`text-right text-gray-900 ${mono ? 'font-mono text-xs break-all' : ''}`}>{value}</dd>
+    </div>
+  )
+}
+
+function GatewayStatusCard({ data }) {
+  // OPNsense gateway status format: { items: { GW_NAME: { name, address, status, loss, delay, stddev, monitor, ... }}}
+  // or older: { items: [...] }
+  const gateways = useMemo(() => {
+    if (!data) return []
+    const items = data.items ?? data
+    if (Array.isArray(items)) return items
+    if (typeof items === 'object') return Object.values(items)
+    return []
+  }, [data])
+
+  const statusBadge = (status) => {
+    const s = String(status || '').toLowerCase()
+    if (s.includes('online') && !s.includes('loss') && !s.includes('delay')) return 'bg-green-100 text-green-800'
+    if (s.includes('warning') || s.includes('delay') || s.includes('loss')) return 'bg-yellow-100 text-yellow-800'
+    if (s.includes('offline') || s.includes('down') || s.includes('force')) return 'bg-red-100 text-red-800'
+    return 'bg-gray-100 text-gray-700'
+  }
+
+  const lossBarColor = (loss) => {
+    const v = parseFloat(loss) || 0
+    if (v >= 50) return 'bg-red-500'
+    if (v >= 10) return 'bg-yellow-500'
+    return 'bg-green-500'
+  }
+
+  if (gateways.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl shadow p-6 mb-8">
+      <h2 className="text-xl font-bold mb-4 text-gray-900">Gateway Status</h2>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-400 uppercase border-b">
+              <th className="py-2 pr-4">Name</th>
+              <th className="py-2 pr-4">Address</th>
+              <th className="py-2 pr-4">Monitor</th>
+              <th className="py-2 pr-4">Status</th>
+              <th className="py-2 pr-4">Loss</th>
+              <th className="py-2 pr-4">Delay</th>
+              <th className="py-2 pr-4">Stddev</th>
+            </tr>
+          </thead>
+          <tbody>
+            {gateways.map((g, i) => {
+              const loss = parseFloat(g.loss) || 0
+              return (
+                <tr key={i} className="border-b hover:bg-gray-50">
+                  <td className="py-3 pr-4 font-semibold">{g.name || '—'}</td>
+                  <td className="py-3 pr-4 font-mono text-xs">{g.address || g.gateway || '—'}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-gray-500">{g.monitor || '—'}</td>
+                  <td className="py-3 pr-4">
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${statusBadge(g.status)}`}>
+                      {g.status || g.status_translated || 'unknown'}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 bg-gray-200 rounded-full h-2">
+                        <div className={`h-2 rounded-full ${lossBarColor(g.loss)}`}
+                          style={{ width: `${Math.min(loss, 100)}%` }}></div>
+                      </div>
+                      <span className="text-xs font-mono w-12 text-right">{g.loss || '0%'}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 font-mono text-xs">{g.delay || '—'}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-gray-500">{g.stddev || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filter, setFilter, autoFollow, setAutoFollow, containerRef, formatLogEntry }) {
+  // Collect distinct interfaces for filter dropdown
+  const interfaces = useMemo(() => {
+    const set = new Set()
+    logs.forEach(l => {
+      if (typeof l === 'object' && l) {
+        const iface = l.interface || l.if
+        if (iface) set.add(iface)
+      }
+    })
+    return Array.from(set).sort()
+  }, [logs])
+
+  // Apply filters
+  const filteredLogs = useMemo(() => {
+    return logs.filter(l => {
+      if (typeof l !== 'object' || l === null) {
+        // string logs only support search filter
+        if (filter.search) return String(l).toLowerCase().includes(filter.search.toLowerCase())
+        return filter.action === 'all'
+      }
+      const action = String(l.action || '').toLowerCase()
+      if (filter.action === 'pass' && !(action === 'pass' || action === 'allow' || action === 'accept')) return false
+      if (filter.action === 'block' && !(action === 'block' || action === 'reject' || action === 'drop')) return false
+      const iface = l.interface || l.if
+      if (filter.iface !== 'all' && iface !== filter.iface) return false
+      if (filter.search) {
+        const needle = filter.search.toLowerCase()
+        const haystack = [
+          l.src, l.dst, l.srcport, l.dstport, l.protoname, l.proto, l.action, l.label, l.rid, l.msg, l.line
+        ].filter(Boolean).map(String).join(' ').toLowerCase()
+        if (!haystack.includes(needle)) return false
+      }
+      return true
+    })
+  }, [logs, filter])
+
+  // Determine line color from action
+  const lineClass = (log) => {
+    if (typeof log !== 'object' || log === null) return 'text-gray-300'
+    const action = String(log.action || '').toLowerCase()
+    if (action === 'pass' || action === 'allow' || action === 'accept') return 'text-green-400 border-l-2 border-green-500 pl-2'
+    if (action === 'block' || action === 'reject' || action === 'drop') return 'text-red-400 border-l-2 border-red-500 pl-2'
+    return 'text-gray-300 border-l-2 border-gray-700 pl-2'
+  }
+
+  // Preserve scroll position; auto-follow only when user is near bottom
+  const prevScrollRef = useRef({ top: 0, height: 0 })
+
+  // Detect user scrolling away from bottom → disable auto-follow
+  const handleScroll = () => {
+    const el = containerRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+    if (autoFollow !== nearBottom) setAutoFollow(nearBottom)
+  }
+
+  // Before logs update we capture the scroll state; after update we apply
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (autoFollow) {
+      el.scrollTop = el.scrollHeight
+    } else {
+      // Restore previous scroll offset relative to bottom so content above stays in view
+      const delta = el.scrollHeight - prevScrollRef.current.height
+      el.scrollTop = prevScrollRef.current.top + (delta > 0 ? delta : 0)
+    }
+    prevScrollRef.current = { top: el.scrollTop, height: el.scrollHeight }
+  }, [filteredLogs, autoFollow, containerRef])
+
+  return (
+    <div className="bg-white rounded-xl shadow p-6">
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+        <h2 className="text-xl font-bold text-gray-900">Live Logs</h2>
+        <div className="flex gap-2 flex-wrap">
+          {['firewall', 'system', 'backend'].map(t => (
+            <button key={t} onClick={() => setLogType(t)}
+              className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${logType === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {t}
+            </button>
+          ))}
+          <button onClick={onRefresh} className="px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 hover:bg-gray-200">
+            🔄
+          </button>
+        </div>
+      </div>
+
+      {/* Filters (only useful for firewall logs) */}
+      {logType === 'firewall' && (
+        <div className="flex flex-wrap gap-2 mb-3 items-center">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            {[['all', 'All'], ['pass', '✓ Pass'], ['block', '✕ Block']].map(([v, l]) => (
+              <button key={v} onClick={() => setFilter({ ...filter, action: v })}
+                className={`px-3 py-1 rounded text-xs font-semibold transition ${
+                  filter.action === v
+                    ? v === 'pass' ? 'bg-green-600 text-white'
+                    : v === 'block' ? 'bg-red-600 text-white'
+                    : 'bg-indigo-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-200'
+                }`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {interfaces.length > 0 && (
+            <select value={filter.iface} onChange={e => setFilter({ ...filter, iface: e.target.value })}
+              className="px-3 py-1 rounded-lg text-xs font-semibold bg-gray-100 border-0">
+              <option value="all">All interfaces</option>
+              {interfaces.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          )}
+          <input type="text" placeholder="Search IP, port, protocol..."
+            value={filter.search}
+            onChange={e => setFilter({ ...filter, search: e.target.value })}
+            className="px-3 py-1 rounded-lg text-xs border bg-white flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+          <span className="text-xs text-gray-500">{filteredLogs.length}/{logs.length}</span>
+        </div>
+      )}
+
+      <div ref={containerRef} onScroll={handleScroll}
+        className="bg-gray-900 rounded-lg p-4 h-80 overflow-y-auto font-mono text-xs">
+        {loadingLogs && logs.length === 0 ? (
+          <p className="text-gray-400">Loading logs...</p>
+        ) : filteredLogs.length > 0 ? (
+          filteredLogs.map((log, i) => (
+            <div key={i} className={`mb-1 whitespace-pre-wrap break-all ${lineClass(log)}`}>
+              {formatLogEntry(log)}
+            </div>
+          ))
+        ) : logs.length > 0 ? (
+          <p className="text-gray-400">No entries match the current filter.</p>
+        ) : (
+          <p className="text-gray-400">No log entries found.</p>
+        )}
+      </div>
+      {!autoFollow && (
+        <button onClick={() => setAutoFollow(true)}
+          className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 font-semibold">
+          ↓ Jump to latest
+        </button>
+      )}
     </div>
   )
 }
