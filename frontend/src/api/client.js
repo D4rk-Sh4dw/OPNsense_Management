@@ -25,6 +25,7 @@ export const firewallsAPI = {
   fetchLicense: (id) => api.post(`/firewalls/${id}/fetch-license`),
   getLogs: (id, logType = 'firewall', limit = 100) =>
     api.get(`/firewalls/${id}/logs`, { params: { log_type: logType, limit } }),
+  getSmart: (id) => api.get(`/firewalls/${id}/smart`),
   updateApiSecret: (id, apiSecret) =>
     api.post(`/firewalls/${id}/update-api-secret`, { api_secret: apiSecret }),
 }
@@ -39,8 +40,11 @@ export const monitoringAPI = {
 export const backupsAPI = {
   list: (firewallId) => api.get(`/backups/firewalls/${firewallId}`),
   create: (firewallId) => api.post(`/backups/firewalls/${firewallId}/create`),
-  restore: (firewallId, backupId) => api.post(`/backups/firewalls/${firewallId}/restore`, { backup_id: backupId }),
+  restore: (firewallId, backupId, areas = null) =>
+    api.post(`/backups/firewalls/${firewallId}/restore`, { backup_id: backupId, areas }),
   delete: (firewallId, backupId) => api.delete(`/backups/firewalls/${firewallId}/backups/${backupId}`),
+  downloadUrl: (firewallId, backupId) =>
+    `/api/backups/firewalls/${firewallId}/backups/${backupId}/download`,
 }
 
 // Updates API

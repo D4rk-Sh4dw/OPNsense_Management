@@ -83,10 +83,25 @@ class OPNsenseAPI:
                     **kwargs
                 )
                 response.raise_for_status()
-                return response.json()
+                # Some endpoints return empty body
+                if not response.content:
+                    return {}
+                try:
+                    return response.json()
+                except Exception:
+                    return {"raw": response.text}
             except httpx.HTTPError as e:
-                logger.error(f"OPNsense API error on {self.host}: {e}")
+                logger.error(f"OPNsense API error on {self.host} {method} {endpoint}: {e}")
                 raise
+
+    async def _request_raw(self, method: str, endpoint: str, **kwargs) -> bytes:
+        """Raw byte response (used for downloads)"""
+        url = f"{self.base_url}{endpoint}"
+        headers = self._get_auth_header()
+        async with httpx.AsyncClient(verify=self.verify, timeout=self.timeout) as client:
+            response = await client.request(method, url, headers=headers, **kwargs)
+            response.raise_for_status()
+            return response.content
 
     # ===== Firmware endpoints =====
     async def get_firmware_status(self) -> Dict[str, Any]:
@@ -110,85 +125,112 @@ class OPNsenseAPI:
         return await self._request("POST", "/core/firmware/reboot")
 
     # ===== Backup endpoints =====
-    async def list_backups(self) -> Dict[str, Any]:
-        """GET /api/core/backup/list"""
-        return await self._request("GET", "/core/backup/list")
+    async def list_remote_backups(self, host: str = "this") -> Any:
+        """GET /api/core/backup/backups/{host} - list remote configuration backups"""
+        return await self._request("GET", f"/core/backup/backups/{host}")
 
-    async def create_backup(self) -> Dict[str, Any]:
-        """POST /api/core/backup/backup"""
-        return await self._request("POST", "/core/backup/backup")
+    async def download_current_config(self, host: str = "this") -> bytes:
+        """GET /api/core/backup/download/{host} - download current configuration as XML"""
+        return await self._request_raw("GET", f"/core/backup/download/{host}")
 
-    async def download_backup(self, filename: str) -> bytes:
-        """GET /api/core/backup/download/{filename}"""
-        url = f"{self.base_url}/core/backup/download/{filename}"
-        headers = self._get_auth_header()
+    async def download_backup_by_name(self, host: str, filename: str) -> bytes:
+        """GET /api/core/backup/download/{host}/{filename} - download specific backup"""
+        return await self._request_raw("GET", f"/core/backup/download/{host}/{filename}")
 
-        async with httpx.AsyncClient(verify=self.verify, timeout=self.timeout) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            return response.content
+    async def delete_remote_backup(self, filename: str) -> Dict[str, Any]:
+        """POST /api/core/backup/delete_backup/{filename}"""
+        return await self._request("POST", f"/core/backup/delete_backup/{filename}")
 
-    async def delete_backup(self, filename: str) -> Dict[str, Any]:
-        """POST /api/core/backup/delete/{filename}"""
-        return await self._request("POST", f"/core/backup/delete/{filename}")
+    async def revert_backup(self, filename: str) -> Dict[str, Any]:
+        """POST /api/core/backup/revert_backup/{filename} - restore a remote backup"""
+        return await self._request("POST", f"/core/backup/revert_backup/{filename}")
 
-    async def restore_backup(self, crypto: str, payload: str) -> Dict[str, Any]:
-        """POST /api/core/backup/restore"""
-        data = {"crypto": crypto, "payload": payload}
-        return await self._request("POST", "/core/backup/restore", json=data)
+    # ===== Diagnostics: System =====
+    async def get_system_information(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/system/systemInformation"""
+        return await self._request("GET", "/diagnostics/system/systemInformation")
 
-    # ===== Diagnostics endpoints =====
-    async def get_system_health(self) -> Dict[str, Any]:
-        """GET /api/diagnostics/systemhealth/get"""
-        return await self._request("GET", "/diagnostics/systemhealth/get")
+    async def get_system_resources(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/system/systemResources - memory, swap, etc."""
+        return await self._request("GET", "/diagnostics/system/systemResources")
+
+    async def get_system_time(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/system/systemTime - uptime, boottime"""
+        return await self._request("GET", "/diagnostics/system/systemTime")
+
+    async def get_system_disk(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/system/systemDisk"""
+        return await self._request("GET", "/diagnostics/system/systemDisk")
+
+    async def get_system_temperature(self) -> Any:
+        """GET /api/diagnostics/system/systemTemperature"""
+        return await self._request("GET", "/diagnostics/system/systemTemperature")
+
+    async def get_system_memory(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/system/memory"""
+        return await self._request("GET", "/diagnostics/system/memory")
+
+    async def get_activity(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/activity/getActivity - returns top processes incl. CPU usage"""
+        return await self._request("GET", "/diagnostics/activity/getActivity")
+
+    async def get_cpu_type(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/cpu_usage/getCPUType"""
+        return await self._request("GET", "/diagnostics/cpu_usage/getCPUType")
+
+    async def get_systemhealth(self) -> Dict[str, Any]:
+        """GET /api/diagnostics/systemhealth/getSystemHealth - RRD data"""
+        return await self._request("GET", "/diagnostics/systemhealth/getSystemHealth")
 
     async def get_gateway_status(self) -> Dict[str, Any]:
         """GET /api/routes/gateway/status"""
         return await self._request("GET", "/routes/gateway/status")
 
     async def get_services_status(self) -> Dict[str, Any]:
-        """POST /api/core/service/search"""
-        return await self._request("POST", "/core/service/search")
+        """GET /api/core/service/search"""
+        # Modern OPNsense uses GET; older use POST. Try GET first.
+        try:
+            return await self._request("GET", "/core/service/search")
+        except Exception:
+            return await self._request("POST", "/core/service/search", json={})
 
     async def get_arp_table(self) -> Dict[str, Any]:
         """GET /api/diagnostics/interface/getArp"""
         return await self._request("GET", "/diagnostics/interface/getArp")
 
     # ===== Logs endpoints =====
-    async def get_firewall_logs(self, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
-        """GET /api/diagnostics/log/core/firewall"""
-        return await self._request(
-            "GET",
-            "/diagnostics/log/core/firewall",
-            params={"limit": limit, "offset": offset}
-        )
+    async def _get_log(self, path: str, limit: int = 100) -> Any:
+        """Fetch logs with pagination params (handles both 'rows' wrapper and plain arrays)"""
+        # Newer OPNsense uses ?current=1&rowCount=N; older accepts ?limit=N
+        params = {"current": 1, "rowCount": limit, "limit": limit}
+        return await self._request("GET", path, params=params)
 
-    async def get_system_logs(self, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
-        """GET /api/diagnostics/log/core/system"""
-        return await self._request(
-            "GET",
-            "/diagnostics/log/core/system",
-            params={"limit": limit, "offset": offset}
-        )
+    async def get_firewall_logs(self, limit: int = 100) -> Any:
+        """Firewall log - try new endpoint first, fall back to legacy"""
+        try:
+            return await self._get_log("/diagnostics/firewall/log", limit)
+        except Exception:
+            return await self._get_log("/diagnostics/log/core/firewall", limit)
 
-    async def get_backend_logs(self, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
-        """GET /api/diagnostics/log/core/backend"""
-        return await self._request(
-            "GET",
-            "/diagnostics/log/core/backend",
-            params={"limit": limit, "offset": offset}
-        )
+    async def get_system_logs(self, limit: int = 100) -> Any:
+        """System log"""
+        return await self._get_log("/diagnostics/log/core/system", limit)
 
-    # ===== S.M.A.R.T. endpoints =====
-    async def get_smart_devices(self) -> Dict[str, Any]:
-        """GET /api/diagnostics/smart/getDevices"""
-        return await self._request("GET", "/diagnostics/smart/getDevices")
+    async def get_backend_logs(self, limit: int = 100) -> Any:
+        """Backend (configd) log"""
+        return await self._get_log("/diagnostics/log/core/configd", limit)
 
-    async def get_smart_device_info(self, device: str) -> Dict[str, Any]:
-        """GET /api/diagnostics/smart/getDeviceInfo/{device}"""
-        return await self._request("GET", f"/diagnostics/smart/getDeviceInfo/{device}")
+    # ===== S.M.A.R.T. endpoints (requires os-smart plugin) =====
+    async def smart_list(self) -> Dict[str, Any]:
+        """POST /api/smart/service/list - list SMART-capable devices"""
+        return await self._request("POST", "/smart/service/list", json={})
 
-    # ===== System Info =====
-    async def get_system_info(self) -> Dict[str, Any]:
-        """GET /api/core/system/info"""
-        return await self._request("GET", "/core/system/info")
+    async def smart_info(self, device: str, dev_type: str = "auto") -> Dict[str, Any]:
+        """POST /api/smart/service/info - detailed SMART info for one device"""
+        return await self._request("POST", "/smart/service/info", json={"device": device, "type": dev_type})
+
+    # ===== Restore (legacy) =====
+    async def restore_backup(self, crypto: str, payload: str) -> Dict[str, Any]:
+        """POST /api/core/backup/restore - upload a configuration XML (legacy; may not exist on all versions)"""
+        data = {"crypto": crypto, "payload": payload}
+        return await self._request("POST", "/core/backup/restore", json=data)

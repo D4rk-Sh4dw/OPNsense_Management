@@ -283,6 +283,53 @@ async def get_firewall_logs(
         raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
 
 
+@router.get("/{firewall_id}/smart")
+async def get_firewall_smart(
+    firewall_id: str,
+    db: Session = Depends(get_db),
+):
+    """Fetch SMART disk health (requires os-smart plugin on the firewall)"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        listing = await api.smart_list()
+        devices = []
+        if isinstance(listing, dict):
+            raw_devs = listing.get("rows") or listing.get("devices") or []
+            if isinstance(raw_devs, list):
+                for d in raw_devs:
+                    dev_name = d.get("dev") or d.get("device") or d.get("name")
+                    if not dev_name:
+                        continue
+                    info = {}
+                    try:
+                        info = await api.smart_info(dev_name, d.get("type") or "auto")
+                    except Exception as ie:
+                        logger.debug(f"smart_info failed for {dev_name}: {ie}")
+                    devices.append({
+                        "device": dev_name,
+                        "type": d.get("type"),
+                        "model": d.get("model") or info.get("model"),
+                        "serial": d.get("serial") or info.get("serial"),
+                        "status": d.get("status") or info.get("status"),
+                        "info": info,
+                    })
+        return {"available": True, "devices": devices}
+    except Exception as e:
+        # Plugin may not be installed: degrade gracefully
+        msg = str(e)
+        if "404" in msg or "not found" in msg.lower():
+            return {"available": False, "reason": "os-smart plugin not installed", "devices": []}
+        raise HTTPException(status_code=502, detail=f"SMART query failed: {e}")
+
+
 @router.post("/{firewall_id}/update-api-secret")
 async def update_api_secret(
     firewall_id: str,

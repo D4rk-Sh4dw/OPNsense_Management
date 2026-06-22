@@ -8,8 +8,10 @@ export default function FirewallDetail() {
   const [status, setStatus] = useState(null)
   const [logs, setLogs] = useState([])
   const [logType, setLogType] = useState('firewall')
+  const [smart, setSmart] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [loadingSmart, setLoadingSmart] = useState(false)
   const [loadingLicense, setLoadingLicense] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [loadingUpdate, setLoadingUpdate] = useState(false)
@@ -39,6 +41,7 @@ export default function FirewallDetail() {
       setFirewall(fwRes.data)
       setStatus(stRes.data)
       setError(null)
+      loadSmart()
     } catch (e) {
       setError('Failed to load firewall')
     } finally {
@@ -46,16 +49,53 @@ export default function FirewallDetail() {
     }
   }
 
+  const loadSmart = async () => {
+    setLoadingSmart(true)
+    try {
+      const res = await firewallsAPI.getSmart(id)
+      setSmart(res.data)
+    } catch (e) {
+      setSmart({ available: false, reason: 'unavailable', devices: [] })
+    } finally {
+      setLoadingSmart(false)
+    }
+  }
+
   const loadLogs = async () => {
     setLoadingLogs(true)
     try {
       const res = await firewallsAPI.getLogs(id, logType, 50)
-      setLogs(res.data?.rows || res.data || [])
+      const raw = res.data
+      let entries = []
+      if (Array.isArray(raw)) entries = raw
+      else if (Array.isArray(raw?.rows)) entries = raw.rows
+      else if (Array.isArray(raw?.data)) entries = raw.data
+      else if (raw && typeof raw === 'object') entries = Object.values(raw)
+      setLogs(entries)
     } catch (e) {
       setLogs([])
     } finally {
       setLoadingLogs(false)
     }
+  }
+
+  const formatLogEntry = (log) => {
+    if (typeof log === 'string') return log
+    if (!log || typeof log !== 'object') return String(log)
+    const ts = log.__timestamp__ || log.timestamp || log.time || log['@timestamp'] || ''
+    const action = log.action ? `[${log.action}]` : ''
+    const iface = log.interface || log.if || ''
+    const proto = log.protoname || log.proto || ''
+    const src = log.src || log.source || log.srcip
+    const sport = log.srcport ? `:${log.srcport}` : ''
+    const dst = log.dst || log.destination || log.dstip
+    const dport = log.dstport ? `:${log.dstport}` : ''
+    const msg = log.msg || log.message || log.line
+    if (src || dst) {
+      return `${ts} ${action} ${iface} ${proto} ${src || ''}${sport} → ${dst || ''}${dport}`.trim()
+    }
+    if (msg) return `${ts} ${msg}`.trim()
+    return JSON.stringify(log)
   }
 
   const handleFetchLicense = async () => {
@@ -225,14 +265,67 @@ export default function FirewallDetail() {
             <p className="text-gray-400">Loading logs...</p>
           ) : logs.length > 0 ? (
             logs.map((log, i) => (
-              <div key={i} className="mb-1">
-                {typeof log === 'string' ? log : JSON.stringify(log)}
+              <div key={i} className="mb-1 whitespace-pre-wrap break-all">
+                {formatLogEntry(log)}
               </div>
             ))
           ) : (
             <p className="text-gray-400">No log entries found.</p>
           )}
         </div>
+      </div>
+
+      {/* S.M.A.R.T. Disk Health */}
+      <div className="bg-white rounded-xl shadow p-6 mt-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-gray-900">S.M.A.R.T. Disk Health</h2>
+          <button onClick={loadSmart} disabled={loadingSmart}
+            className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg font-semibold disabled:opacity-50">
+            {loadingSmart ? '...' : '🔄 Refresh'}
+          </button>
+        </div>
+        {loadingSmart ? (
+          <p className="text-gray-500 text-sm">Loading SMART data...</p>
+        ) : !smart?.available ? (
+          <p className="text-gray-500 text-sm">
+            SMART unavailable {smart?.reason ? `(${smart.reason})` : ''}. Install the <span className="font-mono">os-smart</span> plugin on the firewall.
+          </p>
+        ) : smart.devices.length === 0 ? (
+          <p className="text-gray-500 text-sm">No SMART-capable devices detected.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 uppercase">
+                  <th className="py-2 pr-4">Device</th>
+                  <th className="py-2 pr-4">Model</th>
+                  <th className="py-2 pr-4">Serial</th>
+                  <th className="py-2 pr-4">Type</th>
+                  <th className="py-2 pr-4">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {smart.devices.map((d, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="py-2 pr-4 font-mono">{d.device}</td>
+                    <td className="py-2 pr-4">{d.model || '—'}</td>
+                    <td className="py-2 pr-4 font-mono text-xs">{d.serial || '—'}</td>
+                    <td className="py-2 pr-4">{d.type || '—'}</td>
+                    <td className="py-2 pr-4">
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${
+                        String(d.status).toUpperCase() === 'PASSED' || String(d.status).toUpperCase() === 'OK'
+                          ? 'bg-green-100 text-green-800'
+                          : String(d.status).toUpperCase() === 'FAILED'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}>{d.status || 'unknown'}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

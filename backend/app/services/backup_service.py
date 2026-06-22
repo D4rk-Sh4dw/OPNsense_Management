@@ -52,24 +52,10 @@ class BackupService:
                 firewall.ssl_cert_path
             )
 
-            # Create backup on firewall
-            backup_response = await api_client.create_backup()
-            logger.info(f"Backup created on {firewall.hostname}: {backup_response}")
-
-            # Get backup list to find the newest backup
-            backups_list = await api_client.list_backups()
-            if not backups_list.get("backups"):
-                raise Exception("No backups found after creation")
-
-            # Download the newest backup
-            latest_backup = sorted(
-                backups_list["backups"],
-                key=lambda x: x.get("mtime", 0),
-                reverse=True
-            )[0]
-
-            filename = latest_backup["filename"]
-            backup_data = await api_client.download_backup(filename)
+            # Download current configuration XML directly from OPNsense
+            backup_data = await api_client.download_current_config()
+            if not backup_data:
+                raise Exception("Empty configuration returned from firewall")
 
             # Save backup locally
             backup_dir = BackupService._get_backup_directory(firewall.id)
@@ -83,7 +69,7 @@ class BackupService:
             # Record in database
             backup = Backup(
                 firewall_id=firewall.id,
-                filename=filename,
+                filename=local_filename,
                 filepath=str(filepath),
                 size_bytes=len(backup_data),
                 triggered_by=triggered_by
@@ -149,42 +135,61 @@ class BackupService:
         ).order_by(Backup.created_at.desc()).all()
 
     @staticmethod
+    def _merge_partial_xml(current_xml: bytes, backup_xml: bytes, areas: list) -> bytes:
+        """Replace selected top-level sections in current_xml with those from backup_xml.
+
+        Operates on direct children of <opnsense>. Unknown areas are ignored.
+        Returns the merged XML as bytes.
+        """
+        import xml.etree.ElementTree as ET
+
+        cur_root = ET.fromstring(current_xml)
+        bak_root = ET.fromstring(backup_xml)
+
+        for area in areas:
+            # Remove existing area(s) in current
+            for elem in list(cur_root.findall(area)):
+                cur_root.remove(elem)
+            # Copy from backup (may be multiple, e.g. <interfaces><wan/>...)
+            for elem in bak_root.findall(area):
+                cur_root.append(elem)
+
+        return ET.tostring(cur_root, encoding="utf-8", xml_declaration=True)
+
+    @staticmethod
     async def restore_backup(
         firewall: Firewall,
-        backup_file: str
+        backup_file: str,
+        areas: list | None = None,
     ) -> dict:
-        """
-        Restore a backup to a firewall
+        """Restore a backup to a firewall.
 
-        Args:
-            firewall: Target firewall
-            backup_file: Path to backup file
-
-        Returns:
-            Restore response
+        If `areas` is provided and non-empty, only those top-level XML sections are restored
+        by merging into the firewall's current configuration. Otherwise the full backup XML
+        is uploaded.
         """
         try:
-            # Decrypt API secret
             api_secret = EncryptionService.decrypt(firewall.api_secret)
 
-            # Read backup file
             with open(backup_file, "rb") as f:
                 backup_data = f.read()
 
-            # Encode for API
-            import base64
-            payload = base64.b64encode(backup_data).decode()
-
-            # Initialize API client
             api_client = OPNsenseAPI(
                 firewall.ip,
                 firewall.api_key,
                 api_secret,
                 firewall.verify_ssl,
-                firewall.ssl_cert_path
+                firewall.ssl_cert_path,
             )
 
-            # Restore backup
+            payload_bytes = backup_data
+            if areas:
+                current = await api_client.download_current_config()
+                payload_bytes = BackupService._merge_partial_xml(current, backup_data, areas)
+
+            import base64
+            payload = base64.b64encode(payload_bytes).decode()
+
             result = await api_client.restore_backup("", payload)
             logger.info(f"Backup restored to {firewall.hostname}: {result}")
             return result

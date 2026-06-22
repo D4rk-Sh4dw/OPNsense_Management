@@ -9,7 +9,33 @@ export default function Backups() {
   const [loadingBackups, setLoadingBackups] = useState(false)
   const [creating, setCreating] = useState(false)
   const [restoring, setRestoring] = useState(null)
+  const [restoreTarget, setRestoreTarget] = useState(null) // {id, filename}
+  const [restoreAreas, setRestoreAreas] = useState([])
+  const [restoreMode, setRestoreMode] = useState('full') // 'full' | 'partial'
   const [toast, setToast] = useState(null)
+
+  const AREA_OPTIONS = [
+    { id: 'aliases', label: 'Aliases' },
+    { id: 'filter', label: 'Firewall Rules' },
+    { id: 'nat', label: 'NAT' },
+    { id: 'interfaces', label: 'Interfaces' },
+    { id: 'vlans', label: 'VLANs' },
+    { id: 'gateways', label: 'Gateways' },
+    { id: 'staticroutes', label: 'Static Routes' },
+    { id: 'dhcpd', label: 'DHCPv4' },
+    { id: 'dhcpdv6', label: 'DHCPv6' },
+    { id: 'dnsmasq', label: 'Dnsmasq DNS' },
+    { id: 'unbound', label: 'Unbound DNS' },
+    { id: 'ipsec', label: 'IPsec' },
+    { id: 'openvpn', label: 'OpenVPN' },
+    { id: 'wireguard', label: 'WireGuard' },
+    { id: 'OPNsense', label: 'OPNsense Settings' },
+    { id: 'snmpd', label: 'SNMP' },
+    { id: 'syslog', label: 'Syslog' },
+    { id: 'sysctl', label: 'sysctl' },
+    { id: 'system', label: 'System (users, certs, ...)' },
+    { id: 'widgets', label: 'Dashboard Widgets' },
+  ]
 
   useEffect(() => {
     firewallsAPI.list().then(r => {
@@ -53,17 +79,39 @@ export default function Backups() {
     }
   }
 
-  const handleRestore = async (backupId) => {
-    if (!window.confirm('Restore this backup? The firewall may restart.')) return
-    setRestoring(backupId)
+  const openRestoreDialog = (backup) => {
+    setRestoreTarget(backup)
+    setRestoreMode('full')
+    setRestoreAreas([])
+  }
+
+  const toggleArea = (id) => {
+    setRestoreAreas(prev =>
+      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
+    )
+  }
+
+  const confirmRestore = async () => {
+    if (!restoreTarget) return
+    if (restoreMode === 'partial' && restoreAreas.length === 0) {
+      showToast('Select at least one area or switch to full restore', false)
+      return
+    }
+    setRestoring(restoreTarget.id)
     try {
-      await backupsAPI.restore(selected, backupId)
+      const areas = restoreMode === 'partial' ? restoreAreas : null
+      await backupsAPI.restore(selected, restoreTarget.id, areas)
       showToast('Restore initiated – firewall may restart')
+      setRestoreTarget(null)
     } catch (e) {
       showToast('Restore failed: ' + (e.response?.data?.detail || e.message), false)
     } finally {
       setRestoring(null)
     }
+  }
+
+  const handleDownload = (backupId) => {
+    window.open(backupsAPI.downloadUrl(selected, backupId), '_blank')
   }
 
   const handleDelete = async (firewallId, backupId) => {
@@ -177,7 +225,13 @@ export default function Backups() {
                       </td>
                       <td className="px-6 py-4 flex gap-3">
                         <button
-                          onClick={() => handleRestore(b.id)}
+                          onClick={() => handleDownload(b.id)}
+                          className="text-emerald-600 hover:text-emerald-800 font-bold text-sm"
+                        >
+                          ⬇ Download
+                        </button>
+                        <button
+                          onClick={() => openRestoreDialog(b)}
                           disabled={restoring === b.id}
                           className="text-indigo-600 hover:text-indigo-800 font-bold text-sm disabled:opacity-50"
                         >
@@ -197,6 +251,67 @@ export default function Backups() {
             </div>
           )}
         </>
+      )}
+
+      {/* Restore Modal */}
+      {restoreTarget && (
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b">
+              <h3 className="text-2xl font-black text-gray-900">Restore Backup</h3>
+              <p className="text-sm text-gray-600 mt-1 font-mono break-all">{restoreTarget.filename}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="mode" checked={restoreMode === 'full'}
+                    onChange={() => setRestoreMode('full')} />
+                  <span className="font-semibold">Full restore (entire configuration)</span>
+                </label>
+              </div>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="mode" checked={restoreMode === 'partial'}
+                    onChange={() => setRestoreMode('partial')} />
+                  <span className="font-semibold">Partial restore (selected sections only)</span>
+                </label>
+              </div>
+
+              {restoreMode === 'partial' && (
+                <div className="bg-gray-50 border rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-3">
+                    Sections from the backup XML are merged into the current firewall configuration. Unchecked areas keep their current values.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+                    {AREA_OPTIONS.map(opt => (
+                      <label key={opt.id} className="flex items-center gap-2 text-sm hover:bg-white p-1 rounded cursor-pointer">
+                        <input type="checkbox"
+                          checked={restoreAreas.includes(opt.id)}
+                          onChange={() => toggleArea(opt.id)} />
+                        <span>{opt.label}</span>
+                        <span className="text-xs text-gray-400 font-mono">{opt.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800">
+                ⚠ The firewall may restart or briefly lose connectivity during restore.
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button onClick={() => setRestoreTarget(null)}
+                className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 font-semibold">
+                Cancel
+              </button>
+              <button onClick={confirmRestore} disabled={restoring}
+                className="px-6 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50">
+                {restoring ? 'Restoring...' : 'Confirm Restore'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

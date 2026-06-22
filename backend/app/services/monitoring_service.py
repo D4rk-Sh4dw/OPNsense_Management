@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import Firewall, FirewallStatus, Alert
@@ -6,6 +7,95 @@ from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)
+
+
+def _to_float(value):
+    """Parse '12.5%' or '12.5' or 12.5 → 12.5"""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            m = re.search(r"[-+]?\d*\.?\d+", value)
+            return float(m.group()) if m else None
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_memory(resources: dict):
+    """Extract RAM usage percentage from systemResources response.
+
+    OPNsense returns shapes like:
+      {"memory": {"used": 1234, "total": 8192}}
+      or sometimes flat with 'totalmem', 'usedmem'
+    """
+    if not isinstance(resources, dict):
+        return None
+    mem = resources.get("memory")
+    if isinstance(mem, dict):
+        used = _to_float(mem.get("used"))
+        total = _to_float(mem.get("total"))
+        if used is not None and total and total > 0:
+            return round(used / total * 100, 1)
+    # flat keys
+    used = _to_float(resources.get("usedmem") or resources.get("real_used"))
+    total = _to_float(resources.get("totalmem") or resources.get("real_total"))
+    if used is not None and total and total > 0:
+        return round(used / total * 100, 1)
+    return None
+
+
+def _parse_cpu_from_activity(activity: dict):
+    """Extract overall CPU usage from getActivity response.
+
+    The activity endpoint returns a 'headers' dict containing a 'CPU' string like:
+      "CPU:  3.2% user,  0.0% nice,  5.1% system,  0.4% interrupt, 91.3% idle"
+    """
+    if not isinstance(activity, dict):
+        return None
+    headers = activity.get("headers")
+    if isinstance(headers, dict):
+        cpu_line = headers.get("CPU") or headers.get("cpu") or ""
+    elif isinstance(headers, list):
+        cpu_line = " ".join(str(x) for x in headers if "CPU" in str(x))
+    else:
+        cpu_line = str(activity.get("CPU") or "")
+
+    if cpu_line:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*%\s*idle", cpu_line)
+        if m:
+            idle = float(m.group(1))
+            return round(max(0.0, 100.0 - idle), 1)
+    return None
+
+
+def _parse_uptime(system_time: dict):
+    """Extract uptime in seconds from systemTime response.
+
+    Returns shapes like {"uptime": "1234"} or {"uptime": 1234} or formatted string.
+    """
+    if not isinstance(system_time, dict):
+        return None
+    val = system_time.get("uptime")
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        # numeric string
+        if val.isdigit():
+            return int(val)
+        # parse "5 days 03:14:22" or similar
+        days = hours = mins = secs = 0
+        m = re.search(r"(\d+)\s*day", val)
+        if m:
+            days = int(m.group(1))
+        m = re.search(r"(\d+):(\d+):(\d+)", val)
+        if m:
+            hours, mins, secs = map(int, m.groups())
+        total = days * 86400 + hours * 3600 + mins * 60 + secs
+        return total if total > 0 else None
+    return None
 
 
 class MonitoringService:
@@ -16,73 +106,72 @@ class MonitoringService:
         db: Session,
         firewall: Firewall
     ) -> FirewallStatus:
-        """
-        Perform comprehensive health check on firewall
-
-        Args:
-            db: Database session
-            firewall: Firewall instance
-
-        Returns:
-            Updated FirewallStatus record
-        """
+        """Perform comprehensive health check on firewall"""
         status = FirewallStatus()
         status.firewall_id = firewall.id
         status.checked_at = datetime.utcnow()
 
         try:
-            # Decrypt API secret (decrypt() already returns str)
             api_secret = EncryptionService.decrypt(firewall.api_secret)
-
-            # Initialize API client
             api_client = OPNsenseAPI(
                 firewall.ip,
                 firewall.api_key,
                 api_secret,
                 firewall.verify_ssl,
-                firewall.ssl_cert_path
+                firewall.ssl_cert_path,
             )
 
-            # Check connectivity
+            # Connectivity check via a cheap call
+            await api_client.get_system_information()
             status.online = True
             firewall.last_seen = datetime.utcnow()
 
-            # Get firmware status
+            # Firmware status
             try:
                 fw_status = await api_client.get_firmware_status()
                 status.firmware_version = fw_status.get("product_version")
-                status.updates_available = fw_status.get("updates", 0)
+                status.updates_available = int(fw_status.get("updates", 0) or 0)
             except Exception as e:
-                logger.warning(f"Failed to get firmware status for {firewall.hostname}: {e}")
+                logger.warning(f"Firmware status failed for {firewall.hostname}: {e}")
 
-            # Get system health
+            # RAM via systemResources
             try:
-                health = await api_client.get_system_health()
-                status.cpu_usage = health.get("cpu", [0])[0]
-                status.ram_usage = health.get("memory", {}).get("used_percent")
-                status.uptime_seconds = health.get("uptime")
+                resources = await api_client.get_system_resources()
+                status.ram_usage = _parse_memory(resources)
             except Exception as e:
-                logger.warning(f"Failed to get system health for {firewall.hostname}: {e}")
+                logger.warning(f"systemResources failed for {firewall.hostname}: {e}")
 
-            # Get gateway status
+            # CPU via activity (top output)
+            try:
+                activity = await api_client.get_activity()
+                status.cpu_usage = _parse_cpu_from_activity(activity)
+            except Exception as e:
+                logger.warning(f"getActivity failed for {firewall.hostname}: {e}")
+
+            # Uptime via systemTime
+            try:
+                tm = await api_client.get_system_time()
+                status.uptime_seconds = _parse_uptime(tm)
+            except Exception as e:
+                logger.warning(f"systemTime failed for {firewall.hostname}: {e}")
+
+            # Gateway status
             try:
                 gw_status = await api_client.get_gateway_status()
                 status.gateway_status = gw_status
             except Exception as e:
-                logger.warning(f"Failed to get gateway status for {firewall.hostname}: {e}")
+                logger.warning(f"Gateway status failed for {firewall.hostname}: {e}")
 
-            # Get service status
+            # Service status
             try:
                 services = await api_client.get_services_status()
-                # Extract running services
+                rows = services.get("rows", []) if isinstance(services, dict) else []
                 status.pending_services = [
-                    svc for svc in services.get("services", [])
-                    if svc.get("status") != "running"
+                    svc.get("name") for svc in rows if not svc.get("running")
                 ]
             except Exception as e:
-                logger.warning(f"Failed to get service status for {firewall.hostname}: {e}")
+                logger.warning(f"Service status failed for {firewall.hostname}: {e}")
 
-            # Update last sync error
             firewall.last_sync_error = None
 
         except Exception as e:
@@ -91,7 +180,6 @@ class MonitoringService:
             status.last_error = str(e)
             firewall.last_sync_error = str(e)
 
-            # Create offline alert
             existing_alert = db.query(Alert).filter(
                 Alert.firewall_id == firewall.id,
                 Alert.alert_type == "offline",
@@ -107,10 +195,8 @@ class MonitoringService:
                 )
                 db.add(alert)
 
-        # Save status to database
         db.add(status)
         db.commit()
-
         return status
 
     @staticmethod

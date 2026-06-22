@@ -1,7 +1,9 @@
 import logging
-from typing import List
+import os
+from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
 from app.models import Firewall, Backup
@@ -14,6 +16,7 @@ router = APIRouter(prefix="/api/backups", tags=["backups"])
 
 class RestoreBody(BaseModel):
     backup_id: str
+    areas: Optional[List[str]] = None  # if empty/None → full restore
 
 
 def _create_backup_bg(firewall_id: str, triggered_by: str):
@@ -87,14 +90,40 @@ async def restore_backup(
         raise HTTPException(status_code=404, detail="Backup not found")
 
     try:
-        result = await BackupService.restore_backup(firewall, backup.filepath)
+        result = await BackupService.restore_backup(firewall, backup.filepath, body.areas)
         return {
             "message": "Backup restore initiated",
+            "areas": body.areas or "all",
             "result": result
         }
     except Exception as e:
         logger.error(f"Restore failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/firewalls/{firewall_id}/backups/{backup_id}/download")
+async def download_backup(
+    firewall_id: str,
+    backup_id: str,
+    db: Session = Depends(get_db),
+):
+    """Download a stored backup XML file"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    backup = db.query(Backup).filter(Backup.id == backup_id).first()
+    if not backup or str(backup.firewall_id) != str(firewall_id):
+        raise HTTPException(status_code=404, detail="Backup not found")
+
+    if not backup.filepath or not os.path.exists(backup.filepath):
+        raise HTTPException(status_code=404, detail="Backup file is missing on disk")
+
+    return FileResponse(
+        backup.filepath,
+        media_type="application/xml",
+        filename=backup.filename or os.path.basename(backup.filepath),
+    )
 
 
 @router.delete("/firewalls/{firewall_id}/backups/{backup_id}")
