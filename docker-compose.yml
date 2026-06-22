@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: opnsense_cms_db
+    environment:
+      POSTGRES_DB: opnsense_cms
+      POSTGRES_USER: cms
+      POSTGRES_PASSWORD: changeme_secure_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cms_network
+
+  # FastAPI Backend
+  cms-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opnsense_cms_backend
+    environment:
+      DATABASE_URL: postgresql://cms:changeme_secure_password@db:5432/opnsense_cms
+      SECRET_KEY: your-super-secret-key-change-in-production-min-32-chars
+      DEBUG: "false"
+      SMTP_HOST: ${SMTP_HOST:-mail.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-cms@example.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-password}
+      SMTP_FROM: ${SMTP_FROM:-cms@example.com}
+      VERIFY_SSL: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/app/backups
+    networks:
+      - cms_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # APScheduler Task Scheduler
+  cms-scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opnsense_cms_scheduler
+    command: python scheduler.py
+    environment:
+      DATABASE_URL: postgresql://cms:changeme_secure_password@db:5432/opnsense_cms
+      SECRET_KEY: your-super-secret-key-change-in-production-min-32-chars
+      DEBUG: "false"
+      SMTP_HOST: ${SMTP_HOST:-mail.example.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-cms@example.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-password}
+      SMTP_FROM: ${SMTP_FROM:-cms@example.com}
+      VERIFY_SSL: "false"
+    depends_on:
+      - db
+      - cms-backend
+    volumes:
+      - ./backups:/app/backups
+    networks:
+      - cms_network
+
+  # MCP Server (Model Context Protocol)
+  # Steuerung aller CMS-Funktionen über KI-Assistenten (Claude, Copilot, etc.)
+  # Läuft über stdio – wird von außen per "docker run" oder lokaler Installation gestartet
+  cms-mcp:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: opnsense_cms_mcp
+    environment:
+      CMS_API_URL: http://cms-backend:8000
+    depends_on:
+      cms-backend:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    networks:
+      - cms_network
+    profiles:
+      - mcp  # Nur bei Bedarf starten: docker compose --profile mcp up
+
+  # React Frontend
+  cms-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: opnsense_cms_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    depends_on:
+      - cms-backend
+    networks:
+      - cms_network
+
+volumes:
+  pgdata:
+
+networks:
+  cms_network:
+    driver: bridge

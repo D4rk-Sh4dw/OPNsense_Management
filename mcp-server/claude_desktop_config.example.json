@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "opnsense-cms": {
+      "command": "python",
+      "args": ["/path/to/OPNsense-Management/mcp-server/server.py"],
+      "env": {
+        "CMS_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
