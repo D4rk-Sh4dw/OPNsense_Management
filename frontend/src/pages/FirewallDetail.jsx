@@ -33,11 +33,13 @@ export default function FirewallDetail() {
     if (firewall) loadLogs()
   }, [logType])
 
-  // Auto-refresh live CPU/RAM/uptime every 3 seconds
+  // Auto-refresh live CPU/RAM/uptime (paused when tab is hidden)
   useEffect(() => {
     if (!firewall || !autoRefresh) return
     let cancelled = false
+    let timer = null
     const tick = async () => {
+      if (document.hidden) return
       try {
         const res = await firewallsAPI.getLiveStats(id)
         if (!cancelled) setLiveStats(res.data)
@@ -46,14 +48,21 @@ export default function FirewallDetail() {
       }
     }
     tick()
-    const interval = setInterval(tick, 3000)
-    return () => { cancelled = true; clearInterval(interval) }
+    timer = setInterval(tick, 10000)
+    const onVis = () => { if (!document.hidden) tick() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      cancelled = true
+      if (timer) clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [id, firewall, autoRefresh])
 
-  // Refresh logs every 10s in auto-refresh mode
+  // Refresh logs every 30s in auto-refresh mode (skipped when tab is hidden)
   useEffect(() => {
     if (!firewall || !autoRefresh) return
-    const interval = setInterval(loadLogs, 10000)
+    const tick = () => { if (!document.hidden) loadLogs() }
+    const interval = setInterval(tick, 30000)
     return () => clearInterval(interval)
   }, [id, firewall, autoRefresh, logType])
 

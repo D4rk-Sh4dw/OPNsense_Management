@@ -217,33 +217,45 @@ async def get_dashboard_firewalls(db: Session = Depends(get_db)):
 
 @router.get("/dashboard/firewalls-live", response_model=List[FirewallQuickStatus])
 async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
-    """Get quick firewall status with fresh CPU/RAM polled live from each firewall in parallel."""
+    """Get firewall status with fresh CPU/RAM polled live from each firewall in parallel.
+
+    Results are cached for ~10s and concurrent requests share the same in-flight call,
+    so multiple browser tabs do not multiply load on the firewalls.
+    """
     import asyncio
     from app.services.monitoring_service import _parse_memory, _parse_cpu_from_activity
+    from app.services.live_cache import DASHBOARD_CACHE, LIVE_CACHE, bounded
 
     base = MonitoringService.get_firewall_quick_status(db)
     firewalls = db.query(Firewall).all()
-    fw_map = {str(f.id): f for f in firewalls}
 
-    async def poll(fw: Firewall):
-        try:
-            api_secret = EncryptionService.decrypt(fw.api_secret)
-            api = OPNsenseAPI(fw.ip, fw.api_key, api_secret, fw.verify_ssl, fw.ssl_cert_path)
-            resources, activity = await asyncio.gather(
-                api.get_system_resources(),
-                api.get_activity(),
-                return_exceptions=True,
-            )
-            return str(fw.id), {
-                "online": True,
-                "cpu": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
-                "ram": _parse_memory(resources) if not isinstance(resources, Exception) else None,
-            }
-        except Exception:
-            return str(fw.id), {"online": False, "cpu": None, "ram": None}
+    async def poll_one(fw: Firewall):
+        async def _fetch():
+            try:
+                api_secret = EncryptionService.decrypt(fw.api_secret)
+                api = OPNsenseAPI(fw.ip, fw.api_key, api_secret, fw.verify_ssl, fw.ssl_cert_path)
+                # Override timeout to keep dashboard snappy even when one firewall is slow
+                api.timeout = 5
+                resources, activity = await asyncio.gather(
+                    api.get_system_resources(),
+                    api.get_activity(),
+                    return_exceptions=True,
+                )
+                return {
+                    "online": True,
+                    "cpu": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
+                    "ram": _parse_memory(resources) if not isinstance(resources, Exception) else None,
+                }
+            except Exception:
+                return {"online": False, "cpu": None, "ram": None}
 
-    results = await asyncio.gather(*[poll(fw) for fw in firewalls])
-    live = dict(results)
+        return str(fw.id), await LIVE_CACHE.get_or_fetch(str(fw.id), lambda: bounded(_fetch))
+
+    async def _collect():
+        results = await asyncio.gather(*[poll_one(fw) for fw in firewalls])
+        return dict(results)
+
+    live = await DASHBOARD_CACHE.get_or_fetch("_dashboard", _collect)
 
     for item in base:
         data = live.get(str(item.id))
@@ -378,38 +390,43 @@ async def get_live_stats(
     firewall_id: str,
     db: Session = Depends(get_db),
 ):
-    """Lightweight live CPU/RAM/uptime poll (no DB writes). Used by frontend auto-refresh."""
+    """Lightweight live CPU/RAM/uptime poll (no DB writes, cached ~4s)."""
     from app.services.monitoring_service import (
         _parse_memory,
         _parse_cpu_from_activity,
         _parse_uptime,
     )
+    from app.services.live_cache import LIVE_CACHE, bounded
 
     firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
 
-    try:
-        api_secret = EncryptionService.decrypt(firewall.api_secret)
-        api = OPNsenseAPI(
-            firewall.ip, firewall.api_key, api_secret,
-            firewall.verify_ssl, firewall.ssl_cert_path,
-        )
-        import asyncio
-        resources, activity, tm = await asyncio.gather(
-            api.get_system_resources(),
-            api.get_activity(),
-            api.get_system_time(),
-            return_exceptions=True,
-        )
-        return {
-            "online": True,
-            "cpu_usage": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
-            "ram_usage": _parse_memory(resources) if not isinstance(resources, Exception) else None,
-            "uptime_seconds": _parse_uptime(tm) if not isinstance(tm, Exception) else None,
-        }
-    except Exception as e:
-        return {"online": False, "error": str(e), "cpu_usage": None, "ram_usage": None, "uptime_seconds": None}
+    async def _fetch():
+        try:
+            api_secret = EncryptionService.decrypt(firewall.api_secret)
+            api = OPNsenseAPI(
+                firewall.ip, firewall.api_key, api_secret,
+                firewall.verify_ssl, firewall.ssl_cert_path,
+            )
+            api.timeout = 5
+            import asyncio
+            resources, activity, tm = await asyncio.gather(
+                api.get_system_resources(),
+                api.get_activity(),
+                api.get_system_time(),
+                return_exceptions=True,
+            )
+            return {
+                "online": True,
+                "cpu_usage": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
+                "ram_usage": _parse_memory(resources) if not isinstance(resources, Exception) else None,
+                "uptime_seconds": _parse_uptime(tm) if not isinstance(tm, Exception) else None,
+            }
+        except Exception as e:
+            return {"online": False, "error": str(e), "cpu_usage": None, "ram_usage": None, "uptime_seconds": None}
+
+    return await LIVE_CACHE.get_or_fetch(f"detail:{firewall_id}", lambda: bounded(_fetch))
 
 
 @router.post("/{firewall_id}/reboot")

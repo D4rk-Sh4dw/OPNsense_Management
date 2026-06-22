@@ -8,18 +8,35 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [intervalSec, setIntervalSec] = useState(15)
 
   useEffect(() => {
-    // initial load: fast cached values
     loadData(false)
   }, [])
 
   useEffect(() => {
     if (!autoRefresh) return
-    // poll live status every 5 seconds
-    const interval = setInterval(() => loadData(true), 5000)
-    return () => clearInterval(interval)
-  }, [autoRefresh])
+    let timer = null
+    const start = () => {
+      timer = setInterval(() => {
+        if (!document.hidden) loadData(true)
+      }, intervalSec * 1000)
+    }
+    const onVis = () => {
+      if (document.hidden) {
+        if (timer) { clearInterval(timer); timer = null }
+      } else {
+        loadData(true)
+        if (!timer) start()
+      }
+    }
+    start()
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      if (timer) clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [autoRefresh, intervalSec])
 
   const loadData = async (live = true) => {
     try {
@@ -73,6 +90,15 @@ export default function Dashboard() {
               <span className={`w-2 h-2 rounded-full bg-green-500 ${refreshing ? 'animate-pulse' : ''}`}></span>
             )}
           </label>
+          {autoRefresh && (
+            <select value={intervalSec} onChange={e => setIntervalSec(parseInt(e.target.value))}
+              className="text-sm bg-white px-3 py-2 rounded-lg shadow border-0 font-semibold text-gray-700">
+              <option value="10">10s</option>
+              <option value="15">15s</option>
+              <option value="30">30s</option>
+              <option value="60">1m</option>
+            </select>
+          )}
           <button onClick={() => loadData(true)}
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-semibold text-sm">
             🔄 Refresh
