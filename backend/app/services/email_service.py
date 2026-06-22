@@ -200,3 +200,42 @@ The disk may be failing. Plan replacement immediately.
         """
 
         return EmailService.send_email(notify_email, subject, html_content, plain_text)
+
+    @staticmethod
+    def send_generic_alert(
+        customer_name: str,
+        hostname: str,
+        notify_email: str,
+        severity: str,
+        title: str,
+        details: str,
+    ) -> bool:
+        """Generic alert email used by health/threshold checks."""
+        color = {
+            "critical": "#d9534f",
+            "warning": "#f0ad4e",
+            "info": "#5bc0de",
+        }.get(severity, "#5bc0de")
+
+        subject = f"[OPNsense CMS] {title} - {customer_name}"
+        plain_text = (
+            f"{title}\n\n"
+            f"Customer: {customer_name}\n"
+            f"Firewall: {hostname}\n"
+            f"Severity: {severity.upper()}\n\n"
+            f"{details}\n"
+        )
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif;">
+                <h2 style="color: {color};">{title}</h2>
+                <p><strong>Customer:</strong> {customer_name}</p>
+                <p><strong>Firewall:</strong> {hostname}</p>
+                <p><strong>Severity:</strong> <span style="color: {color}; font-weight: bold;">{severity.upper()}</span></p>
+                <hr/>
+                <p style="white-space: pre-wrap;">{details}</p>
+            </body>
+        </html>
+        """
+        return EmailService.send_email(notify_email, subject, html_content, plain_text)
+

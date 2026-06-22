@@ -5,8 +5,89 @@ from sqlalchemy.orm import Session
 from app.models import Firewall, FirewallStatus, Alert
 from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
+from app.services.email_service import EmailService
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
+
+
+def _open_alert(db: Session, firewall_id, alert_type: str):
+    return db.query(Alert).filter(
+        Alert.firewall_id == firewall_id,
+        Alert.alert_type == alert_type,
+        Alert.resolved == False,
+    ).first()
+
+
+def raise_alert(
+    db: Session,
+    firewall: Firewall,
+    alert_type: str,
+    severity: str,
+    message: str,
+    title: str | None = None,
+    send_email: bool = True,
+) -> Alert | None:
+    """Create a new alert (only if no unresolved one exists) and optionally send email."""
+    existing = _open_alert(db, firewall.id, alert_type)
+    if existing:
+        return existing
+
+    alert = Alert(
+        firewall_id=firewall.id,
+        alert_type=alert_type,
+        severity=severity,
+        message=message,
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+
+    if send_email and firewall.notify_email:
+        try:
+            EmailService.send_generic_alert(
+                customer_name=firewall.customer_name,
+                hostname=firewall.hostname or firewall.ip,
+                notify_email=firewall.notify_email,
+                severity=severity,
+                title=title or alert_type.replace("_", " ").title(),
+                details=message,
+            )
+        except Exception as e:
+            logger.warning(f"Alert email failed for {firewall.hostname}: {e}")
+
+    return alert
+
+
+def resolve_alert_if_open(db: Session, firewall_id, alert_type: str):
+    open_alert = _open_alert(db, firewall_id, alert_type)
+    if open_alert:
+        open_alert.resolved = True
+        open_alert.resolved_at = datetime.utcnow()
+        db.commit()
+
+
+def _gateway_problems(gw_status: dict) -> list:
+    """Return list of (name, status) for gateways that are down/forced-down."""
+    if not gw_status:
+        return []
+    items = gw_status.get("items") if isinstance(gw_status, dict) else None
+    if items is None:
+        items = gw_status
+    if isinstance(items, dict):
+        items = list(items.values())
+    if not isinstance(items, list):
+        return []
+
+    bad = []
+    for g in items:
+        if not isinstance(g, dict):
+            continue
+        s = str(g.get("status") or g.get("status_translated") or "").lower()
+        if "down" in s or "force_down" in s or "offline" in s:
+            bad.append((g.get("name") or g.get("monitor") or "?", s))
+    return bad
 
 
 def _to_float(value):
@@ -180,24 +261,110 @@ class MonitoringService:
             status.last_error = str(e)
             firewall.last_sync_error = str(e)
 
-            existing_alert = db.query(Alert).filter(
-                Alert.firewall_id == firewall.id,
-                Alert.alert_type == "offline",
-                Alert.resolved == False
-            ).first()
-
-            if not existing_alert:
-                alert = Alert(
-                    firewall_id=firewall.id,
-                    alert_type="offline",
-                    severity="critical",
-                    message=f"Firewall {firewall.hostname} is offline: {str(e)}"
-                )
-                db.add(alert)
-
         db.add(status)
         db.commit()
+        db.refresh(status)
+
+        # Post-status alerting (uses fresh status + history)
+        try:
+            if not status.online:
+                raise_alert(
+                    db, firewall,
+                    alert_type="offline",
+                    severity="critical",
+                    title="Firewall offline",
+                    message=f"Firewall {firewall.hostname or firewall.ip} is not reachable: {status.last_error or 'unknown error'}",
+                )
+            else:
+                resolve_alert_if_open(db, firewall.id, "offline")
+                MonitoringService._check_resource_thresholds(db, firewall, status)
+                MonitoringService._check_gateway_alerts(db, firewall, status)
+                MonitoringService._check_pending_updates(db, firewall, status)
+        except Exception as e:
+            logger.warning(f"Post-status alerting failed for {firewall.hostname}: {e}")
+            db.rollback()
+
         return status
+
+    @staticmethod
+    def _check_resource_thresholds(db: Session, firewall: Firewall, status: FirewallStatus):
+        """High-CPU / high-RAM alerts (trigger after N consecutive checks over threshold)."""
+        n = max(1, settings.CPU_RAM_CONSECUTIVE_CHECKS)
+
+        for metric, threshold, alert_type, label in (
+            ("cpu_usage", settings.CPU_ALERT_THRESHOLD, "high_cpu", "CPU"),
+            ("ram_usage", settings.RAM_ALERT_THRESHOLD, "high_ram", "RAM"),
+        ):
+            recent = (
+                db.query(FirewallStatus)
+                .filter(FirewallStatus.firewall_id == firewall.id)
+                .order_by(FirewallStatus.checked_at.desc())
+                .limit(n)
+                .all()
+            )
+            vals = [getattr(s, metric) for s in recent]
+            current = getattr(status, metric)
+
+            if len(recent) >= n and all(v is not None and v > threshold for v in vals):
+                raise_alert(
+                    db, firewall,
+                    alert_type=alert_type,
+                    severity="warning",
+                    title=f"High {label} usage",
+                    message=(
+                        f"{label} usage above {threshold}% for the last {n} checks "
+                        f"(current: {current}%)."
+                    ),
+                )
+            elif current is not None and current <= threshold:
+                resolve_alert_if_open(db, firewall.id, alert_type)
+
+    @staticmethod
+    def _check_gateway_alerts(db: Session, firewall: Firewall, status: FirewallStatus):
+        problems = _gateway_problems(status.gateway_status or {})
+        if problems:
+            names = ", ".join(f"{n} ({s})" for n, s in problems)
+            raise_alert(
+                db, firewall,
+                alert_type="gateway_offline",
+                severity="warning",
+                title="Gateway offline",
+                message=f"One or more gateways are down: {names}",
+            )
+        else:
+            resolve_alert_if_open(db, firewall.id, "gateway_offline")
+
+    @staticmethod
+    def _check_pending_updates(db: Session, firewall: Firewall, status: FirewallStatus):
+        if not status.updates_available or status.updates_available <= 0:
+            resolve_alert_if_open(db, firewall.id, "updates_pending")
+            return
+
+        oldest = (
+            db.query(FirewallStatus)
+            .filter(
+                FirewallStatus.firewall_id == firewall.id,
+                FirewallStatus.updates_available > 0,
+            )
+            .order_by(FirewallStatus.checked_at.asc())
+            .first()
+        )
+        if not oldest:
+            return
+
+        age = datetime.utcnow() - oldest.checked_at
+        if age >= timedelta(days=settings.PENDING_UPDATE_DAYS):
+            raise_alert(
+                db, firewall,
+                alert_type="updates_pending",
+                severity="warning",
+                title="Updates pending",
+                message=(
+                    f"{status.updates_available} update(s) have been available for "
+                    f"{age.days} days. Please plan a maintenance window."
+                ),
+            )
+
 
     @staticmethod
     def check_smart_health(
@@ -216,58 +383,48 @@ class MonitoringService:
         Returns:
             List of created alerts
         """
-        alerts = []
+        problems: list[tuple[str, str, str]] = []  # (severity, device, description)
 
         try:
-            # Check each device
             for device_info in smart_data.get("devices", []):
-                device = device_info.get("name")
-                status = device_info.get("status")
+                device = device_info.get("name") or "unknown"
+                status = (device_info.get("status") or "").upper()
 
-                # Check for FAILED status
                 if status == "FAILED":
-                    alert = Alert(
-                        firewall_id=firewall.id,
-                        alert_type="smart_error",
-                        severity="critical",
-                        message=f"S.M.A.R.T. Error on device {device}: Status FAILED"
-                    )
-                    db.add(alert)
-                    alerts.append(alert)
+                    problems.append(("critical", device, "S.M.A.R.T. status FAILED"))
 
-                # Check critical attributes
-                for attr in device_info.get("attributes", []):
+                for attr in device_info.get("attributes", []) or []:
                     attr_id = attr.get("id")
-                    attr_name = attr.get("name")
-                    raw_value = attr.get("raw_value", 0)
+                    raw_value = attr.get("raw_value", 0) or 0
+                    try:
+                        raw_value = int(raw_value)
+                    except (TypeError, ValueError):
+                        raw_value = 0
 
-                    # Check known critical attributes
-                    if attr_id == 5 and raw_value > 0:  # Reallocated Sectors
-                        alert = Alert(
-                            firewall_id=firewall.id,
-                            alert_type="smart_error",
-                            severity="warning",
-                            message=f"S.M.A.R.T. Warning: {device} has {raw_value} reallocated sectors"
-                        )
-                        db.add(alert)
-                        alerts.append(alert)
-
-                    elif attr_id == 197 and raw_value > 0:  # Pending Sectors
-                        alert = Alert(
-                            firewall_id=firewall.id,
-                            alert_type="smart_error",
-                            severity="warning",
-                            message=f"S.M.A.R.T. Warning: {device} has pending sector errors"
-                        )
-                        db.add(alert)
-                        alerts.append(alert)
-
-            db.commit()
-
+                    if attr_id == 5 and raw_value > 0:
+                        problems.append(("warning", device, f"{raw_value} reallocated sectors"))
+                    elif attr_id == 197 and raw_value > 0:
+                        problems.append(("warning", device, f"{raw_value} pending sectors"))
         except Exception as e:
             logger.error(f"S.M.A.R.T. check failed: {e}")
+            return []
 
-        return alerts
+        if not problems:
+            resolve_alert_if_open(db, firewall.id, "smart_error")
+            return []
+
+        severity = "critical" if any(p[0] == "critical" for p in problems) else "warning"
+        message = "\n".join(f"- {dev}: {desc}" for _, dev, desc in problems)
+
+        alert = raise_alert(
+            db, firewall,
+            alert_type="smart_error",
+            severity=severity,
+            title="Disk S.M.A.R.T. issue",
+            message="One or more disks reported S.M.A.R.T. problems:\n" + message,
+        )
+        return [alert] if alert else []
+
 
     @staticmethod
     def get_dashboard_summary(db: Session) -> dict:

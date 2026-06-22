@@ -15,6 +15,8 @@ from app.services.monitoring_service import MonitoringService
 from app.services.backup_service import BackupService
 from app.services.update_service import UpdateService
 from app.services.email_service import EmailService
+from app.services.opnsense_api import OPNsenseAPI
+from app.services.encryption_service import EncryptionService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -137,6 +139,54 @@ async def auto_update_firewalls():
         db.close()
 
 
+async def smart_check_all_firewalls():
+    """Daily S.M.A.R.T. disk health check across all firewalls."""
+    logger.info("Starting S.M.A.R.T. check...")
+    db = _new_session()
+
+    try:
+        firewalls = db.query(Firewall).all()
+        for fw in firewalls:
+            try:
+                api_secret = EncryptionService.decrypt(fw.api_secret)
+                api = OPNsenseAPI(
+                    fw.ip, fw.api_key, api_secret,
+                    fw.verify_ssl, fw.ssl_cert_path,
+                )
+
+                listing = await api.smart_list()
+                rows = (
+                    listing.get("rows")
+                    or listing.get("devices")
+                    or listing.get("items")
+                    or []
+                )
+                devices = []
+                for d in rows:
+                    if not isinstance(d, dict):
+                        continue
+                    dev = d.get("dev") or d.get("device") or d.get("name")
+                    if not dev:
+                        continue
+                    try:
+                        info = await api.smart_info(dev, d.get("type") or "auto")
+                    except Exception as e:
+                        logger.debug(f"smart_info failed for {fw.hostname}/{dev}: {e}")
+                        info = {}
+                    devices.append({
+                        "name": dev,
+                        "status": d.get("status") or info.get("status"),
+                        "attributes": info.get("attributes") or info.get("rows") or [],
+                    })
+
+                MonitoringService.check_smart_health(db, fw, {"devices": devices})
+                logger.info(f"S.M.A.R.T. check completed: {fw.hostname}")
+            except Exception as e:
+                logger.warning(f"S.M.A.R.T. check failed for {fw.hostname}: {e}")
+    finally:
+        db.close()
+
+
 def sync_job(coro_factory):
     """Run an async coroutine in its own event loop from APScheduler thread."""
     try:
@@ -188,6 +238,15 @@ def start_scheduler():
         args=[auto_update_firewalls],
         id='auto_updates',
         name='Apply automatic updates'
+    )
+
+    scheduler.add_job(
+        sync_job,
+        'cron',
+        hour=settings.SMART_CHECK_HOUR,
+        args=[smart_check_all_firewalls],
+        id='smart_check',
+        name='Daily S.M.A.R.T. disk check'
     )
 
     logger.info("Scheduler starting...")

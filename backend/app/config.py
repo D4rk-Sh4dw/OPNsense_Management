@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     LICENSE_CHECK_HOUR: int = 2  # 2 AM daily
     MONITORING_INTERVAL_MINUTES: int = 5
     BACKUP_CHECK_HOUR: int = 1  # 1 AM daily
+    SMART_CHECK_HOUR: int = 3  # 3 AM daily
+
+    # Alerting thresholds
+    CPU_ALERT_THRESHOLD: int = 90       # percent
+    RAM_ALERT_THRESHOLD: int = 90       # percent
+    CPU_RAM_CONSECUTIVE_CHECKS: int = 3  # how many checks in a row before alerting
+    PENDING_UPDATE_DAYS: int = 7        # alert when updates have been available for N days
 
     class Config:
         env_file = ".env"
