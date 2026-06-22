@@ -1,17 +1,29 @@
 import React, { useState, useEffect } from 'react'
 import { firewallsAPI } from '../api/client'
 
+const EMPTY_FORM = {
+  customer_name: '',
+  hostname: '',
+  ip: '',
+  api_key: '',
+  api_secret: '',
+  notify_email: '',
+  license_expiry: '',
+  auto_update: false,
+  backup_interval: 'daily',
+  notes: '',
+  verify_ssl: false,
+}
+
 export default function Firewalls() {
   const [firewalls, setFirewalls] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [formData, setFormData] = useState({
-    customer_name: '',
-    hostname: '',
-    ip: '',
-    notify_email: '',
-  })
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [formData, setFormData] = useState(EMPTY_FORM)
 
   useEffect(() => {
     loadFirewalls()
@@ -32,20 +44,36 @@ export default function Firewalls() {
   }
 
   const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
+    const { name, value, type, checked } = e.target
+    setFormData({ ...formData, [name]: type === 'checkbox' ? checked : value })
   }
 
   const handleAddFirewall = async (e) => {
     e.preventDefault()
-    if (!formData.customer_name || !formData.ip) {
-      alert('Please fill in required fields')
-      return
+    setFormError(null)
+    setSubmitting(true)
+    try {
+      // ip field holds the URL/hostname of the firewall
+      await firewallsAPI.create(formData)
+      setFormData(EMPTY_FORM)
+      setShowAddForm(false)
+      await loadFirewalls()
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to add firewall'
+      setFormError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } finally {
+      setSubmitting(false)
     }
-    // TODO: Implement add firewall API call
-    alert('Add firewall feature coming soon')
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await firewallsAPI.delete(id)
+      setDeleteConfirm(null)
+      await loadFirewalls()
+    } catch (err) {
+      setError('Failed to delete firewall')
+    }
   }
 
   if (loading) {
@@ -64,10 +92,10 @@ export default function Firewalls() {
           <p className="text-gray-600 mt-2">Total: {firewalls?.length || 0} firewalls</p>
         </div>
         <button
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => { setShowAddForm(!showAddForm); setFormError(null) }}
           className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold px-6 py-3 rounded-lg shadow-lg hover:shadow-xl hover:from-indigo-700 hover:to-blue-700 transition"
         >
-          + Add Firewall
+          {showAddForm ? '✕ Cancel' : '+ Add Firewall'}
         </button>
       </div>
 
@@ -77,61 +105,124 @@ export default function Firewalls() {
         </div>
       )}
 
+      {/* ── Add Firewall Form ─────────────────────────── */}
       {showAddForm && (
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-8 border-l-4 border-indigo-600">
-          <h2 className="text-2xl font-bold mb-4">Add New Firewall</h2>
-          <form onSubmit={handleAddFirewall} className="grid md:grid-cols-2 gap-4">
-            <input
-              type="text"
-              name="customer_name"
-              placeholder="Customer Name *"
-              value={formData.customer_name}
-              onChange={handleInputChange}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
-              required
-            />
-            <input
-              type="text"
-              name="hostname"
-              placeholder="Hostname"
-              value={formData.hostname}
-              onChange={handleInputChange}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
-            />
-            <input
-              type="text"
-              name="ip"
-              placeholder="IP Address *"
-              value={formData.ip}
-              onChange={handleInputChange}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
-              required
-            />
-            <input
-              type="email"
-              name="notify_email"
-              placeholder="Notification Email"
-              value={formData.notify_email}
-              onChange={handleInputChange}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
-            />
-            <button type="submit" className="md:col-span-2 bg-indigo-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-indigo-700 transition">
-              Add Firewall
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-8 border-l-4 border-indigo-600">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">New Firewall</h2>
+
+          {formError && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {formError}
+            </div>
+          )}
+
+          <form onSubmit={handleAddFirewall}>
+            {/* Section: Identity */}
+            <p className="text-xs font-bold uppercase text-indigo-600 tracking-widest mb-3">Identity</p>
+            <div className="grid md:grid-cols-2 gap-4 mb-6">
+              <Field label="Customer Name *" name="customer_name" value={formData.customer_name} onChange={handleInputChange} placeholder="Musterfirma GmbH" required />
+              <Field label="Hostname" name="hostname" value={formData.hostname} onChange={handleInputChange} placeholder="fw01.kunde.de" />
+            </div>
+
+            {/* Section: Connection */}
+            <p className="text-xs font-bold uppercase text-indigo-600 tracking-widest mb-3">OPNsense Connection</p>
+            <div className="grid md:grid-cols-2 gap-4 mb-6">
+              <Field
+                label="Firewall IP / URL *"
+                name="ip"
+                value={formData.ip}
+                onChange={handleInputChange}
+                placeholder="192.168.1.1 or fw.kunde.de"
+                required
+              />
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="verify_ssl"
+                    checked={formData.verify_ssl}
+                    onChange={handleInputChange}
+                    className="w-4 h-4 accent-indigo-600"
+                  />
+                  <span className="text-sm font-semibold text-gray-700">Verify SSL Certificate</span>
+                </label>
+              </div>
+              <Field label="API Key *" name="api_key" value={formData.api_key} onChange={handleInputChange} placeholder="API Key from OPNsense" required />
+              <Field label="API Secret *" name="api_secret" value={formData.api_secret} onChange={handleInputChange} placeholder="API Secret from OPNsense" type="password" required />
+            </div>
+
+            {/* Section: Notifications */}
+            <p className="text-xs font-bold uppercase text-indigo-600 tracking-widest mb-3">Notifications & Licensing</p>
+            <div className="grid md:grid-cols-2 gap-4 mb-6">
+              <Field label="Notification Email" name="notify_email" value={formData.notify_email} onChange={handleInputChange} placeholder="admin@firma.de" type="email" />
+              <Field label="License Expiry Date" name="license_expiry" value={formData.license_expiry} onChange={handleInputChange} type="date" />
+            </div>
+
+            {/* Section: Automation */}
+            <p className="text-xs font-bold uppercase text-indigo-600 tracking-widest mb-3">Automation</p>
+            <div className="grid md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Backup Interval</label>
+                <select
+                  name="backup_interval"
+                  value={formData.backup_interval}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="auto_update"
+                    checked={formData.auto_update}
+                    onChange={handleInputChange}
+                    className="w-4 h-4 accent-indigo-600"
+                  />
+                  <span className="text-sm font-semibold text-gray-700">Enable Auto Updates</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+              <textarea
+                name="notes"
+                value={formData.notes}
+                onChange={handleInputChange}
+                rows={2}
+                placeholder="Internal notes about this firewall..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold py-3 rounded-lg hover:from-indigo-700 hover:to-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? 'Adding...' : '+ Add Firewall'}
             </button>
           </form>
         </div>
       )}
 
+      {/* ── Firewall Table ────────────────────────────── */}
       {firewalls && firewalls.length > 0 ? (
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
                 <tr>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Customer</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Hostname</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">IP Address</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold">IP / URL</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">License Expiry</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold">Auto Update</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
                 </tr>
               </thead>
@@ -139,7 +230,7 @@ export default function Firewalls() {
                 {firewalls.map((fw) => (
                   <tr key={fw.id} className="hover:bg-gray-50 transition">
                     <td className="px-6 py-4 font-semibold text-gray-900">{fw.customer_name}</td>
-                    <td className="px-6 py-4 text-gray-700">{fw.hostname || 'N/A'}</td>
+                    <td className="px-6 py-4 text-gray-700">{fw.hostname || '—'}</td>
                     <td className="px-6 py-4 text-gray-600 font-mono text-sm">{fw.ip}</td>
                     <td className="px-6 py-4">
                       {fw.license_expiry ? (
@@ -149,8 +240,26 @@ export default function Firewalls() {
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <button className="text-indigo-600 hover:text-indigo-800 font-bold mr-4">📊 View</button>
-                      <button className="text-red-600 hover:text-red-800 font-bold">🗑️ Delete</button>
+                      {fw.auto_update
+                        ? <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">✓ On</span>
+                        : <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full">Off</span>
+                      }
+                    </td>
+                    <td className="px-6 py-4 flex gap-3">
+                      <button
+                        onClick={() => window.location.href = `/dashboard`}
+                        className="text-indigo-600 hover:text-indigo-800 font-bold"
+                      >
+                        📊 Status
+                      </button>
+                      {deleteConfirm === fw.id ? (
+                        <span className="flex gap-2 items-center">
+                          <button onClick={() => handleDelete(fw.id)} className="text-red-600 font-bold hover:text-red-800">Confirm</button>
+                          <button onClick={() => setDeleteConfirm(null)} className="text-gray-500 font-bold hover:text-gray-700">Cancel</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setDeleteConfirm(fw.id)} className="text-red-500 hover:text-red-700 font-bold">🗑 Delete</button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -159,8 +268,8 @@ export default function Firewalls() {
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-lg p-12 text-center">
-          <div className="text-6xl mb-4">📭</div>
+        <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+          <div className="text-6xl mb-4">🔭</div>
           <p className="text-gray-500 text-lg mb-6">No firewalls registered yet</p>
           <button
             onClick={() => setShowAddForm(true)}
@@ -170,6 +279,26 @@ export default function Firewalls() {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// Reusable input field component
+function Field({ label, name, value, onChange, placeholder = '', type = 'text', required = false }) {
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-gray-700 mb-1">
+        {label}
+      </label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required={required}
+        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+      />
     </div>
   )
 }
