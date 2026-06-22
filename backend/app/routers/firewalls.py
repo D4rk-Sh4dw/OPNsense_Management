@@ -330,6 +330,67 @@ async def get_firewall_smart(
         raise HTTPException(status_code=502, detail=f"SMART query failed: {e}")
 
 
+@router.get("/{firewall_id}/live-stats")
+async def get_live_stats(
+    firewall_id: str,
+    db: Session = Depends(get_db),
+):
+    """Lightweight live CPU/RAM/uptime poll (no DB writes). Used by frontend auto-refresh."""
+    from app.services.monitoring_service import (
+        _parse_memory,
+        _parse_cpu_from_activity,
+        _parse_uptime,
+    )
+
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        import asyncio
+        resources, activity, tm = await asyncio.gather(
+            api.get_system_resources(),
+            api.get_activity(),
+            api.get_system_time(),
+            return_exceptions=True,
+        )
+        return {
+            "online": True,
+            "cpu_usage": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
+            "ram_usage": _parse_memory(resources) if not isinstance(resources, Exception) else None,
+            "uptime_seconds": _parse_uptime(tm) if not isinstance(tm, Exception) else None,
+        }
+    except Exception as e:
+        return {"online": False, "error": str(e), "cpu_usage": None, "ram_usage": None, "uptime_seconds": None}
+
+
+@router.post("/{firewall_id}/reboot")
+async def reboot_firewall(
+    firewall_id: str,
+    db: Session = Depends(get_db),
+):
+    """Reboot the OPNsense firewall."""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        result = await api.reboot_system()
+        logger.info(f"Reboot initiated on {firewall.hostname}: {result}")
+        return {"message": "Reboot initiated", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Reboot failed: {e}")
+
+
 @router.post("/{firewall_id}/update-api-secret")
 async def update_api_secret(
     firewall_id: str,

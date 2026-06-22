@@ -15,6 +15,13 @@ export default function FirewallDetail() {
   const [loadingLicense, setLoadingLicense] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [loadingUpdate, setLoadingUpdate] = useState(false)
+  const [loadingCheck, setLoadingCheck] = useState(false)
+  const [loadingReboot, setLoadingReboot] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [liveStats, setLiveStats] = useState(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [savingEdit, setSavingEdit] = useState(false)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
 
@@ -25,6 +32,30 @@ export default function FirewallDetail() {
   useEffect(() => {
     if (firewall) loadLogs()
   }, [logType])
+
+  // Auto-refresh live CPU/RAM/uptime every 3 seconds
+  useEffect(() => {
+    if (!firewall || !autoRefresh) return
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const res = await firewallsAPI.getLiveStats(id)
+        if (!cancelled) setLiveStats(res.data)
+      } catch {
+        if (!cancelled) setLiveStats(prev => prev ? { ...prev, online: false } : null)
+      }
+    }
+    tick()
+    const interval = setInterval(tick, 3000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [id, firewall, autoRefresh])
+
+  // Refresh logs every 10s in auto-refresh mode
+  useEffect(() => {
+    if (!firewall || !autoRefresh) return
+    const interval = setInterval(loadLogs, 10000)
+    return () => clearInterval(interval)
+  }, [id, firewall, autoRefresh, logType])
 
   const showToast = (msg, ok = true) => {
     setToast({ msg, ok })
@@ -137,6 +168,75 @@ export default function FirewallDetail() {
     }
   }
 
+  const handleCheckUpdates = async () => {
+    setLoadingCheck(true)
+    try {
+      const res = await updatesAPI.checkUpdates(id)
+      const n = res.data?.updates_available ?? 0
+      showToast(n > 0 ? `${n} update(s) available` : 'Firewall is up to date')
+      loadAll()
+    } catch (e) {
+      showToast('Update check failed: ' + (e.response?.data?.detail || e.message), false)
+    } finally {
+      setLoadingCheck(false)
+    }
+  }
+
+  const handleReboot = async () => {
+    if (!window.confirm('Reboot the firewall? It will be offline for a few minutes.')) return
+    setLoadingReboot(true)
+    try {
+      await firewallsAPI.reboot(id)
+      showToast('Reboot initiated')
+    } catch (e) {
+      showToast('Reboot failed: ' + (e.response?.data?.detail || e.message), false)
+    } finally {
+      setLoadingReboot(false)
+    }
+  }
+
+  const openEdit = () => {
+    setEditForm({
+      customer_name: firewall.customer_name || '',
+      hostname: firewall.hostname || '',
+      ip: firewall.ip || '',
+      api_key: firewall.api_key || '',
+      notify_email: firewall.notify_email || '',
+      auto_update: !!firewall.auto_update,
+      auto_update_window: firewall.auto_update_window || '',
+      backup_interval: firewall.backup_interval || 'daily',
+      backup_retention: firewall.backup_retention || 7,
+      verify_ssl: !!firewall.verify_ssl,
+      license_type: firewall.license_type || '',
+      license_expiry: firewall.license_expiry ? firewall.license_expiry.split('T')[0] : '',
+      tags: firewall.tags || '',
+      notes: firewall.notes || '',
+      api_secret: '',
+    })
+    setEditOpen(true)
+  }
+
+  const saveEdit = async () => {
+    setSavingEdit(true)
+    try {
+      const payload = { ...editForm }
+      const newSecret = payload.api_secret
+      delete payload.api_secret
+      Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null })
+      await firewallsAPI.update(id, payload)
+      if (newSecret && newSecret.trim()) {
+        await firewallsAPI.updateApiSecret(id, newSecret.trim())
+      }
+      showToast('Firewall settings updated')
+      setEditOpen(false)
+      loadAll()
+    } catch (e) {
+      showToast('Save failed: ' + (e.response?.data?.detail || e.message), false)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -169,10 +269,23 @@ export default function FirewallDetail() {
           <h1 className="text-4xl font-black text-gray-900">{firewall.customer_name}</h1>
           <p className="text-gray-500">{firewall.hostname || firewall.ip}</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          <label className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg shadow cursor-pointer">
+            <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+            <span className="font-semibold text-gray-700">Live</span>
+            {autoRefresh && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
+          </label>
+          <button onClick={openEdit}
+            className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition font-semibold">
+            ✎ Edit
+          </button>
           <button onClick={handleHealthCheck} disabled={loadingHealth}
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 font-semibold">
             {loadingHealth ? '...' : '🔄 Check Health'}
+          </button>
+          <button onClick={handleCheckUpdates} disabled={loadingCheck}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 font-semibold">
+            {loadingCheck ? '...' : '🔎 Check Updates'}
           </button>
           {status?.updates_available > 0 && (
             <button onClick={handleInstallUpdates} disabled={loadingUpdate}
@@ -180,15 +293,21 @@ export default function FirewallDetail() {
               {loadingUpdate ? '...' : `⚡ Install ${status.updates_available} Update(s)`}
             </button>
           )}
+          <button onClick={handleReboot} disabled={loadingReboot}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition disabled:opacity-50 font-semibold">
+            {loadingReboot ? '...' : '⏻ Reboot'}
+          </button>
         </div>
       </div>
 
       {/* Status Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Status" value={status?.online ? '🟢 Online' : '🔴 Offline'} />
+        <StatCard label="Status" value={(liveStats?.online ?? status?.online) ? '🟢 Online' : '🔴 Offline'} />
         <StatCard label="Firmware" value={status?.firmware_version || '—'} />
-        <StatCard label="CPU" value={status?.cpu_usage != null ? `${status.cpu_usage.toFixed(1)}%` : '—'} />
-        <StatCard label="RAM" value={status?.ram_usage != null ? `${status.ram_usage.toFixed(1)}%` : '—'} />
+        <StatCard label="CPU" value={(liveStats?.cpu_usage ?? status?.cpu_usage) != null
+          ? `${(liveStats?.cpu_usage ?? status?.cpu_usage).toFixed(1)}%` : '—'} live={autoRefresh && liveStats?.cpu_usage != null} />
+        <StatCard label="RAM" value={(liveStats?.ram_usage ?? status?.ram_usage) != null
+          ? `${(liveStats?.ram_usage ?? status?.ram_usage).toFixed(1)}%` : '—'} live={autoRefresh && liveStats?.ram_usage != null} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
@@ -327,14 +446,108 @@ export default function FirewallDetail() {
           </div>
         )}
       </div>
+
+      {/* Edit Modal */}
+      {editOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b">
+              <h3 className="text-2xl font-black text-gray-900">Edit Firewall</h3>
+              <p className="text-sm text-gray-600 mt-1">{firewall.customer_name}</p>
+            </div>
+            <div className="p-6 grid md:grid-cols-2 gap-4 text-sm">
+              <Field label="Customer Name" value={editForm.customer_name}
+                onChange={v => setEditForm({...editForm, customer_name: v})} />
+              <Field label="Hostname" value={editForm.hostname}
+                onChange={v => setEditForm({...editForm, hostname: v})} />
+              <Field label="IP / URL" value={editForm.ip}
+                onChange={v => setEditForm({...editForm, ip: v})} />
+              <Field label="API Key" value={editForm.api_key}
+                onChange={v => setEditForm({...editForm, api_key: v})} mono />
+              <Field label="API Secret (leave empty to keep)" value={editForm.api_secret}
+                onChange={v => setEditForm({...editForm, api_secret: v})} mono type="password" />
+              <Field label="Notify Email" value={editForm.notify_email}
+                onChange={v => setEditForm({...editForm, notify_email: v})} />
+              <SelectField label="License Type" value={editForm.license_type}
+                onChange={v => setEditForm({...editForm, license_type: v})}
+                options={[['', '—'], ['community', 'Community'], ['business', 'Business']]} />
+              <Field label="License Expiry" type="date" value={editForm.license_expiry}
+                onChange={v => setEditForm({...editForm, license_expiry: v})} />
+              <SelectField label="Backup Interval" value={editForm.backup_interval}
+                onChange={v => setEditForm({...editForm, backup_interval: v})}
+                options={[['hourly','Hourly'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]} />
+              <Field label="Backup Retention" type="number" value={editForm.backup_retention}
+                onChange={v => setEditForm({...editForm, backup_retention: parseInt(v) || 0})} />
+              <Field label="Auto Update Window (e.g. 02:00-04:00)" value={editForm.auto_update_window}
+                onChange={v => setEditForm({...editForm, auto_update_window: v})} />
+              <Field label="Tags (comma-separated)" value={editForm.tags}
+                onChange={v => setEditForm({...editForm, tags: v})} />
+              <div className="flex items-center gap-2 col-span-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={editForm.auto_update}
+                    onChange={e => setEditForm({...editForm, auto_update: e.target.checked})} />
+                  <span className="font-semibold">Auto-install updates</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer ml-6">
+                  <input type="checkbox" checked={editForm.verify_ssl}
+                    onChange={e => setEditForm({...editForm, verify_ssl: e.target.checked})} />
+                  <span className="font-semibold">Verify SSL</span>
+                </label>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Notes</label>
+                <textarea value={editForm.notes}
+                  onChange={e => setEditForm({...editForm, notes: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                  rows="3" />
+              </div>
+            </div>
+            <div className="p-6 border-t flex justify-end gap-3">
+              <button onClick={() => setEditOpen(false)}
+                className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 font-semibold">
+                Cancel
+              </button>
+              <button onClick={saveEdit} disabled={savingEdit}
+                className="px-6 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50">
+                {savingEdit ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function StatCard({ label, value }) {
+function Field({ label, value, onChange, type = 'text', mono = false }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4">
-      <p className="text-xs font-bold uppercase text-gray-400 mb-1">{label}</p>
+    <div>
+      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">{label}</label>
+      <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
+        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 ${mono ? 'font-mono text-xs' : ''}`} />
+    </div>
+  )
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">{label}</label>
+      <select value={value ?? ''} onChange={e => onChange(e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white">
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </div>
+  )
+}
+
+function StatCard({ label, value, live }) {
+  return (
+    <div className="bg-white rounded-xl shadow p-4 relative">
+      <p className="text-xs font-bold uppercase text-gray-400 mb-1 flex items-center gap-2">
+        {label}
+        {live && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
+      </p>
       <p className="text-lg font-bold text-gray-900">{value}</p>
     </div>
   )
