@@ -20,6 +20,7 @@ export default function Navbar() {
             <li><Link to="/" className={`pb-2 transition ${isActive('/')}`}>Home</Link></li>
             <li><Link to="/dashboard" className={`pb-2 transition ${isActive('/dashboard')}`}>Dashboard</Link></li>
             <li><Link to="/firewalls" className={`pb-2 transition ${isActive('/firewalls')}`}>Firewalls</Link></li>
+            <li><Link to="/backups" className={`pb-2 transition ${isActive('/backups')}`}>Backups</Link></li>
             <li><Link to="/alerts" className={`pb-2 transition ${isActive('/alerts')}`}>Alerts</Link></li>
           </ul>
 

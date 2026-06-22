@@ -39,6 +39,7 @@ class Firewall(Base):
     backup_retention = Column(Integer, default=30)
     tags = Column(JSON, default=list)
     notes = Column(Text)
+    license_type = Column(String(20), nullable=True)  # "community", "business", None
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, nullable=True)
     last_sync_error = Column(Text, nullable=True)

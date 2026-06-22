@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
@@ -43,6 +43,16 @@ class FirewallBase(BaseModel):
     tags: Optional[List[str]] = []
     notes: Optional[str] = None
 
+    @field_validator("notify_email", mode="before")
+    @classmethod
+    def empty_str_to_none_email(cls, v):
+        return None if v == "" else v
+
+    @field_validator("hostname", "notes", mode="before")
+    @classmethod
+    def empty_str_to_none_str(cls, v):
+        return None if v == "" else v
+
 
 class FirewallCreate(FirewallBase):
     api_key: str
@@ -50,6 +60,12 @@ class FirewallCreate(FirewallBase):
     verify_ssl: bool = False
     ssl_cert_path: Optional[str] = None
     license_expiry: Optional[datetime] = None
+    license_type: Optional[str] = None   # "community" | "business" | None
+
+    @field_validator("license_expiry", mode="before")
+    @classmethod
+    def empty_str_to_none_date(cls, v):
+        return None if v == "" else v
 
 
 class FirewallUpdate(BaseModel):
@@ -64,6 +80,17 @@ class FirewallUpdate(BaseModel):
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
     license_expiry: Optional[datetime] = None
+    license_type: Optional[str] = None
+
+    @field_validator("notify_email", mode="before")
+    @classmethod
+    def empty_str_to_none_email(cls, v):
+        return None if v == "" else v
+
+    @field_validator("license_expiry", mode="before")
+    @classmethod
+    def empty_str_to_none_date(cls, v):
+        return None if v == "" else v
 
 
 class FirewallResponse(FirewallBase):
@@ -72,6 +99,7 @@ class FirewallResponse(FirewallBase):
     verify_ssl: bool
     ssl_cert_path: Optional[str]
     license_expiry: Optional[datetime]
+    license_type: Optional[str]
     created_at: datetime
     last_seen: Optional[datetime]
     last_sync_error: Optional[str]

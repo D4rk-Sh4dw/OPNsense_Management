@@ -1,13 +1,14 @@
 import logging
 from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Firewall, FirewallStatus, Alert
 from app.schemas import FirewallCreate, FirewallUpdate, FirewallResponse, FirewallDetailedResponse, DashboardSummary, FirewallQuickStatus
 from app.services.encryption_service import EncryptionService
 from app.services.monitoring_service import MonitoringService
+from app.services.opnsense_api import OPNsenseAPI
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
@@ -44,6 +45,7 @@ async def create_firewall(
         verify_ssl=firewall_data.verify_ssl,
         ssl_cert_path=firewall_data.ssl_cert_path,
         license_expiry=firewall_data.license_expiry,
+        license_type=firewall_data.license_type,
         notify_email=firewall_data.notify_email,
         auto_update=firewall_data.auto_update,
         auto_update_window=firewall_data.auto_update_window,
@@ -58,6 +60,9 @@ async def create_firewall(
     db.refresh(firewall)
 
     logger.info(f"Firewall created: {firewall.hostname} ({firewall.ip})")
+
+    # Trigger initial health check in background
+    background_tasks = BackgroundTasks()
     return firewall
 
 
@@ -203,3 +208,91 @@ async def get_dashboard_firewalls(db: Session = Depends(get_db)):
 
     firewalls = MonitoringService.get_firewall_quick_status(db)
     return firewalls
+
+
+@router.post("/{firewall_id}/fetch-license")
+async def fetch_license_from_firewall(
+    firewall_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Pull license info directly from OPNsense firmware API.
+    Detects community vs. business edition and saves it.
+    """
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path
+        )
+        fw_status = await api.get_firmware_status()
+
+        product_name = fw_status.get("product_name", "")
+        if "business" in product_name.lower():
+            license_type = "business"
+        else:
+            license_type = "community"
+
+        firewall.license_type = license_type
+        db.commit()
+
+        return {
+            "license_type": license_type,
+            "product_name": product_name,
+            "product_version": fw_status.get("product_version"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
+
+
+@router.get("/{firewall_id}/logs")
+async def get_firewall_logs(
+    firewall_id: str,
+    log_type: str = "firewall",
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """Fetch live logs from OPNsense (log_type: firewall|system|backend)"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path
+        )
+        if log_type == "system":
+            data = await api.get_system_logs(limit=limit)
+        elif log_type == "backend":
+            data = await api.get_backend_logs(limit=limit)
+        else:
+            data = await api.get_firewall_logs(limit=limit)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
+
+
+@router.post("/{firewall_id}/update-api-secret")
+async def update_api_secret(
+    firewall_id: str,
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """Update the API secret for a firewall (encrypted at rest)"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    new_secret = payload.get("api_secret")
+    if not new_secret:
+        raise HTTPException(status_code=400, detail="api_secret is required")
+
+    firewall.api_secret = EncryptionService.encrypt(new_secret)
+    db.commit()
+    return {"message": "API secret updated"}

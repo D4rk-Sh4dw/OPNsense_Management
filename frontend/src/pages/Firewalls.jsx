@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { firewallsAPI } from '../api/client'
 
 const EMPTY_FORM = {
@@ -9,8 +10,10 @@ const EMPTY_FORM = {
   api_secret: '',
   notify_email: '',
   license_expiry: '',
+  license_type: '',
   auto_update: false,
   backup_interval: 'daily',
+  backup_retention: 30,
   notes: '',
   verify_ssl: false,
 }
@@ -156,6 +159,15 @@ export default function Firewalls() {
             <div className="grid md:grid-cols-2 gap-4 mb-6">
               <Field label="Notification Email" name="notify_email" value={formData.notify_email} onChange={handleInputChange} placeholder="admin@firma.de" type="email" />
               <Field label="License Expiry Date" name="license_expiry" value={formData.license_expiry} onChange={handleInputChange} type="date" />
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">License Type</label>
+                <select name="license_type" value={formData.license_type} onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600">
+                  <option value="">Unknown / Fetch from Firewall later</option>
+                  <option value="community">Community</option>
+                  <option value="business">Business</option>
+                </select>
+              </div>
             </div>
 
             {/* Section: Automation */}
@@ -163,25 +175,28 @@ export default function Firewalls() {
             <div className="grid md:grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Backup Interval</label>
-                <select
-                  name="backup_interval"
-                  value={formData.backup_interval}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
-                >
+                <select name="backup_interval" value={formData.backup_interval} onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600">
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
                 </select>
               </div>
+              <Field label="Backup Retention (count)" name="backup_retention" value={formData.backup_retention} onChange={handleInputChange} type="number" />
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Auto-Update Window</label>
+                <select name="auto_update_window" value={formData.auto_update_window || 'sun:02:00'} onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600">
+                  {['mon','tue','wed','thu','fri','sat','sun'].map(d => (
+                    ['00:00','01:00','02:00','03:00','04:00','22:00','23:00'].map(h => (
+                      <option key={`${d}:${h}`} value={`${d}:${h}`}>{d.toUpperCase()} {h}</option>
+                    ))
+                  ))}
+                </select>
+              </div>
               <div className="flex items-end pb-1">
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="auto_update"
-                    checked={formData.auto_update}
-                    onChange={handleInputChange}
-                    className="w-4 h-4 accent-indigo-600"
-                  />
+                  <input type="checkbox" name="auto_update" checked={formData.auto_update} onChange={handleInputChange}
+                    className="w-4 h-4 accent-indigo-600" />
                   <span className="text-sm font-semibold text-gray-700">Enable Auto Updates</span>
                 </label>
               </div>
@@ -246,12 +261,12 @@ export default function Firewalls() {
                       }
                     </td>
                     <td className="px-6 py-4 flex gap-3">
-                      <button
-                        onClick={() => window.location.href = `/dashboard`}
+                      <Link
+                        to={`/firewalls/${fw.id}`}
                         className="text-indigo-600 hover:text-indigo-800 font-bold"
                       >
-                        📊 Status
-                      </button>
+                        📊 Details
+                      </Link>
                       {deleteConfirm === fw.id ? (
                         <span className="flex gap-2 items-center">
                           <button onClick={() => handleDelete(fw.id)} className="text-red-600 font-bold hover:text-red-800">Confirm</button>

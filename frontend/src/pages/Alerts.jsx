@@ -70,7 +70,7 @@ export default function Alerts() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-2xl">{getSeverityIcon(alert.severity)}</span>
-                    <span className="font-bold text-lg">{alert.alert_type}</span>
+                    <span className="font-bold text-lg capitalize">{alert.alert_type.replace(/_/g, ' ')}</span>
                   </div>
                   <p className="text-sm">{alert.message}</p>
                   <p className="text-xs opacity-75 mt-2">
@@ -78,10 +78,15 @@ export default function Alerts() {
                   </p>
                 </div>
                 <button
-                  onClick={() => alert('Resolve feature coming soon')}
-                  className="ml-4 px-4 py-2 bg-white rounded-lg hover:bg-gray-50 transition font-semibold"
+                  onClick={async () => {
+                    try {
+                      await alertsAPI.resolve(alert.id)
+                      loadAlerts()
+                    } catch (e) { console.error(e) }
+                  }}
+                  className="ml-4 px-4 py-2 bg-white rounded-lg hover:bg-gray-100 transition font-semibold text-sm"
                 >
-                  Resolve
+                  ✓ Resolve
                 </button>
               </div>
             </div>

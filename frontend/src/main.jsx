@@ -6,6 +6,8 @@ import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Dashboard from './pages/Dashboard'
 import Firewalls from './pages/Firewalls'
+import FirewallDetail from './pages/FirewallDetail'
+import Backups from './pages/Backups'
 import Alerts from './pages/Alerts'
 
 function App() {
@@ -18,6 +20,8 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/firewalls" element={<Firewalls />} />
+            <Route path="/firewalls/:id" element={<FirewallDetail />} />
+            <Route path="/backups" element={<Backups />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

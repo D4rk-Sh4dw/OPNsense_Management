@@ -6,15 +6,27 @@ const api = axios.create({
   baseURL: API_BASE,
 })
 
+/** Strip empty strings to null before sending to backend */
+export function sanitize(obj) {
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+}
+
 // Firewall API
 export const firewallsAPI = {
   list: () => api.get('/firewalls'),
   get: (id) => api.get(`/firewalls/${id}`),
-  create: (data) => api.post('/firewalls', data),
-  update: (id, data) => api.patch(`/firewalls/${id}`, data),
+  create: (data) => api.post('/firewalls', sanitize(data)),
+  update: (id, data) => api.patch(`/firewalls/${id}`, sanitize(data)),
   delete: (id) => api.delete(`/firewalls/${id}`),
   checkHealth: (id) => api.post(`/firewalls/${id}/check-health`),
   getStatus: (id) => api.get(`/firewalls/${id}/status`),
+  fetchLicense: (id) => api.post(`/firewalls/${id}/fetch-license`),
+  getLogs: (id, logType = 'firewall', limit = 100) =>
+    api.get(`/firewalls/${id}/logs`, { params: { log_type: logType, limit } }),
+  updateApiSecret: (id, apiSecret) =>
+    api.post(`/firewalls/${id}/update-api-secret`, { api_secret: apiSecret }),
 }
 
 // Monitoring API
