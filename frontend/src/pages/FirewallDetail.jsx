@@ -566,10 +566,21 @@ function GatewayStatusCard({ data }) {
 
   const statusBadge = (status) => {
     const s = String(status || '').toLowerCase()
+    if (!s || s === 'none') return 'bg-gray-100 text-gray-500'
     if (s.includes('online') && !s.includes('loss') && !s.includes('delay')) return 'bg-green-100 text-green-800'
     if (s.includes('warning') || s.includes('delay') || s.includes('loss')) return 'bg-yellow-100 text-yellow-800'
     if (s.includes('offline') || s.includes('down') || s.includes('force')) return 'bg-red-100 text-red-800'
     return 'bg-gray-100 text-gray-700'
+  }
+
+  const statusLabel = (g) => {
+    const raw = String(g.status ?? '').toLowerCase()
+    if (raw && raw !== 'none') return g.status_translated || g.status
+    // No active monitoring → fall back to translated text or "Monitoring disabled"
+    if (g.status_translated && String(g.status_translated).toLowerCase() !== 'none') {
+      return g.status_translated
+    }
+    return 'No monitor'
   }
 
   const lossBarColor = (loss) => {
@@ -607,7 +618,7 @@ function GatewayStatusCard({ data }) {
                   <td className="py-3 pr-4 font-mono text-xs text-gray-500">{g.monitor || '—'}</td>
                   <td className="py-3 pr-4">
                     <span className={`px-2 py-1 rounded text-xs font-bold ${statusBadge(g.status)}`}>
-                      {g.status || g.status_translated || 'unknown'}
+                      {statusLabel(g)}
                     </span>
                   </td>
                   <td className="py-3 pr-4">
