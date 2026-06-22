@@ -1,102 +1,171 @@
 import { useState, useEffect } from 'react'
-import { firewallsAPI, monitoringAPI } from '../api/client'
+import { monitoringAPI } from '../api/client'
 
 export default function Dashboard() {
   const [summary, setSummary] = useState(null)
   const [firewalls, setFirewalls] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [summaryRes, firewallsRes] = await Promise.all([
-          monitoringAPI.getDashboard(),
-          monitoringAPI.getQuickStatus(),
-        ])
-        setSummary(summaryRes.data)
-        setFirewalls(firewallsRes.data)
-      } catch (error) {
-        console.error('Failed to load dashboard:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     loadData()
-    const interval = setInterval(loadData, 30000) // Refresh every 30s
+    const interval = setInterval(loadData, 30000)
     return () => clearInterval(interval)
   }, [])
 
+  const loadData = async () => {
+    try {
+      setError(null)
+      const [summaryRes, firewallsRes] = await Promise.all([
+        monitoringAPI.getDashboard(),
+        monitoringAPI.getQuickStatus(),
+      ])
+      setSummary(summaryRes.data || summaryRes)
+      setFirewalls(firewallsRes.data || firewallsRes)
+    } catch (error) {
+      console.error('Failed to load dashboard:', error)
+      setError('Failed to load dashboard data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (loading) {
-    return <div className="p-8 text-center">Loading...</div>
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          {error}
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-4xl font-black text-gray-900">Dashboard</h1>
+        <p className="text-gray-600 mt-2">Real-time Firewall Management Overview</p>
+      </div>
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <SummaryCard title="Total Firewalls" value={summary.total_firewalls} />
-          <SummaryCard title="Online" value={summary.online_count} className="text-green-600" />
-          <SummaryCard title="Offline" value={summary.offline_count} className="text-red-600" />
-          <SummaryCard title="Pending Updates" value={summary.pending_updates} className="text-yellow-600" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <SummaryCard 
+            title="Total Firewalls" 
+            value={summary.total_firewalls} 
+            icon="🔥"
+            color="indigo"
+          />
+          <SummaryCard 
+            title="Online" 
+            value={summary.online_count} 
+            icon="✓"
+            color="green"
+          />
+          <SummaryCard 
+            title="Offline" 
+            value={summary.offline_count} 
+            icon="✕"
+            color="red"
+          />
+          <SummaryCard 
+            title="Pending Updates" 
+            value={summary.pending_updates} 
+            icon="⚡"
+            color="yellow"
+          />
         </div>
       )}
 
       {/* Firewalls Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-100 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-sm font-semibold">Customer</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">Hostname</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">IP</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">Firmware</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">Updates</th>
-              <th className="px-6 py-3 text-left text-sm font-semibold">CPU/RAM</th>
-            </tr>
-          </thead>
-          <tbody>
-            {firewalls.map((fw) => (
-              <tr key={fw.id} className="border-b hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm">{fw.customer_name}</td>
-                <td className="px-6 py-4 text-sm">{fw.hostname}</td>
-                <td className="px-6 py-4 text-sm text-gray-600">{fw.ip}</td>
-                <td className="px-6 py-4 text-sm">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    fw.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {fw.online ? 'Online' : 'Offline'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm">{fw.firmware_version || '-'}</td>
-                <td className="px-6 py-4 text-sm">
-                  {fw.updates_available > 0 ? (
-                    <span className="text-yellow-600 font-medium">{fw.updates_available}</span>
-                  ) : (
-                    <span className="text-green-600">✓</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-sm">
-                  {fw.cpu_usage ? `${fw.cpu_usage.toFixed(1)}% / ${fw.ram_usage?.toFixed(1)}%` : '-'}
-                </td>
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
+              <tr>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Customer</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Hostname</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">IP Address</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Status</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Firmware</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Updates</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Resources</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {firewalls && firewalls.length > 0 ? (
+                firewalls.map((fw) => (
+                  <tr key={fw.id} className="hover:bg-gray-50 transition">
+                    <td className="px-6 py-4 font-semibold text-gray-900">{fw.customer_name}</td>
+                    <td className="px-6 py-4 text-gray-700">{fw.hostname || 'N/A'}</td>
+                    <td className="px-6 py-4 text-gray-600 font-mono text-sm">{fw.ip}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        fw.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {fw.online ? '🟢 Online' : '🔴 Offline'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-700 text-sm">{fw.firmware_version || 'Unknown'}</td>
+                    <td className="px-6 py-4">
+                      {fw.updates_available > 0 ? (
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">⚡ {fw.updates_available}</span>
+                      ) : (
+                        <span className="text-green-600 font-bold">✓ Latest</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {fw.cpu_usage !== null ? (
+                        <div className="text-gray-700">
+                          <div>CPU: {fw.cpu_usage?.toFixed(1) || 'N/A'}%</div>
+                          <div>RAM: {fw.ram_usage?.toFixed(1) || 'N/A'}%</div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                    No firewalls registered yet. Go to Firewalls tab to add one.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
 }
 
-function SummaryCard({ title, value, className = '' }) {
+function SummaryCard({ title, value, icon, color }) {
+  const colorClasses = {
+    indigo: 'from-indigo-500 to-indigo-600',
+    green: 'from-green-500 to-green-600',
+    red: 'from-red-500 to-red-600',
+    yellow: 'from-yellow-500 to-yellow-600',
+  }
+
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <p className="text-gray-600 text-sm mb-2">{title}</p>
-      <p className={`text-3xl font-bold ${className}`}>{value}</p>
+    <div className={`bg-gradient-to-br ${colorClasses[color]} rounded-lg shadow-lg p-6 text-white`}>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-white text-opacity-80 text-sm font-semibold mb-1">{title}</p>
+          <p className="text-4xl font-black">{value}</p>
+        </div>
+        <span className="text-3xl opacity-50">{icon}</span>
+      </div>
     </div>
   )
 }
