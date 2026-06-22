@@ -5,7 +5,17 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Firewall, FirewallStatus, Alert
-from app.schemas import FirewallCreate, FirewallUpdate, FirewallResponse, FirewallDetailedResponse, DashboardSummary, FirewallQuickStatus
+from app.schemas import (
+    FirewallCreate,
+    FirewallUpdate,
+    FirewallResponse,
+    FirewallDetailedResponse,
+    FirewallStatusResponse,
+    BackupResponse,
+    AlertResponse,
+    DashboardSummary,
+    FirewallQuickStatus,
+)
 from app.services.encryption_service import EncryptionService
 from app.services.monitoring_service import MonitoringService
 from app.services.opnsense_api import OPNsenseAPI
@@ -60,9 +70,6 @@ async def create_firewall(
     db.refresh(firewall)
 
     logger.info(f"Firewall created: {firewall.hostname} ({firewall.ip})")
-
-    # Trigger initial health check in background
-    background_tasks = BackgroundTasks()
     return firewall
 
 
@@ -91,14 +98,12 @@ async def get_firewall(firewall_id: str, db: Session = Depends(get_db)):
         Alert.resolved == False
     ).order_by(Alert.created_at.desc()).limit(5).all()
 
-    result = {
-        **firewall.__dict__,
-        "status": status,
-        "recent_backups": backups,
-        "recent_alerts": alerts
-    }
-
-    return result
+    # Build the response using pydantic so binary fields and SA state are excluded
+    base = FirewallResponse.model_validate(firewall).model_dump()
+    base["status"] = FirewallStatusResponse.model_validate(status).model_dump() if status else None
+    base["recent_backups"] = [BackupResponse.model_validate(b).model_dump() for b in backups]
+    base["recent_alerts"] = [AlertResponse.model_validate(a).model_dump() for a in alerts]
+    return base
 
 
 @router.patch("/{firewall_id}", response_model=FirewallResponse)
@@ -149,7 +154,7 @@ async def delete_firewall(firewall_id: str, db: Session = Depends(get_db)):
     logger.info(f"Firewall deleted: {firewall.hostname}")
 
 
-@router.get("/{firewall_id}/status", response_model=dict)
+@router.get("/{firewall_id}/status")
 async def get_firewall_status(
     firewall_id: str,
     db: Session = Depends(get_db)
@@ -165,9 +170,9 @@ async def get_firewall_status(
     ).order_by(FirewallStatus.checked_at.desc()).first()
 
     if not status:
-        return {"message": "No status data yet"}
+        return None
 
-    return status.__dict__
+    return FirewallStatusResponse.model_validate(status).model_dump()
 
 
 @router.post("/{firewall_id}/check-health")

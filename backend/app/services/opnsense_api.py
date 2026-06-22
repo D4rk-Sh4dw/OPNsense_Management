@@ -32,14 +32,19 @@ class OPNsenseAPI:
         self.host = host
         self.api_key = api_key
         self.api_secret = api_secret
-        self.verify_ssl = verify_ssl or ssl_cert_path
+        self.verify_ssl = bool(verify_ssl)
         self.ssl_cert_path = ssl_cert_path
         self.base_url = f"https://{host}/api"
         self.timeout = settings.REQUEST_TIMEOUT_SECONDS
 
-        # Setup SSL verification
-        if self.verify_ssl and ssl_cert_path:
+        # Setup SSL verification:
+        # - cert path → use it as CA bundle
+        # - verify_ssl=True without cert → trust system CAs
+        # - verify_ssl=False → no verification (self-signed dev firewalls)
+        if ssl_cert_path:
             self.verify = ssl_cert_path
+        elif self.verify_ssl:
+            self.verify = True
         else:
             self.verify = False
 

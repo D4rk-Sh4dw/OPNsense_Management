@@ -39,7 +39,7 @@ class UpdateService:
 
         try:
             # Decrypt API secret
-            api_secret = EncryptionService.decrypt(firewall.api_secret).decode() if isinstance(firewall.api_secret, bytes) else firewall.api_secret
+            api_secret = EncryptionService.decrypt(firewall.api_secret)
 
             # Initialize API client
             api_client = OPNsenseAPI(
@@ -141,7 +141,7 @@ class UpdateService:
         for fw in firewalls:
             try:
                 # Decrypt API secret
-                api_secret = EncryptionService.decrypt(fw.api_secret).decode() if isinstance(fw.api_secret, bytes) else fw.api_secret
+                api_secret = EncryptionService.decrypt(fw.api_secret)
 
                 # Initialize API client
                 api_client = OPNsenseAPI(

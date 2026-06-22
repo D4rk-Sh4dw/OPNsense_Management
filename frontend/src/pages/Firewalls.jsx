@@ -12,6 +12,7 @@ const EMPTY_FORM = {
   license_expiry: '',
   license_type: '',
   auto_update: false,
+  auto_update_window: 'sun:02:00',
   backup_interval: 'daily',
   backup_retention: 30,
   notes: '',
@@ -48,7 +49,15 @@ export default function Firewalls() {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
-    setFormData({ ...formData, [name]: type === 'checkbox' ? checked : value })
+    let newValue
+    if (type === 'checkbox') {
+      newValue = checked
+    } else if (type === 'number') {
+      newValue = value === '' ? '' : Number(value)
+    } else {
+      newValue = value
+    }
+    setFormData({ ...formData, [name]: newValue })
   }
 
   const handleAddFirewall = async (e) => {
@@ -184,13 +193,13 @@ export default function Firewalls() {
               <Field label="Backup Retention (count)" name="backup_retention" value={formData.backup_retention} onChange={handleInputChange} type="number" />
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Auto-Update Window</label>
-                <select name="auto_update_window" value={formData.auto_update_window || 'sun:02:00'} onChange={handleInputChange}
+                <select name="auto_update_window" value={formData.auto_update_window} onChange={handleInputChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600">
-                  {['mon','tue','wed','thu','fri','sat','sun'].map(d => (
-                    ['00:00','01:00','02:00','03:00','04:00','22:00','23:00'].map(h => (
+                  {['mon','tue','wed','thu','fri','sat','sun'].flatMap(d =>
+                    ['00:00','01:00','02:00','03:00','04:00','05:00','22:00','23:00'].map(h => (
                       <option key={`${d}:${h}`} value={`${d}:${h}`}>{d.toUpperCase()} {h}</option>
                     ))
-                  ))}
+                  )}
                 </select>
               </div>
               <div className="flex items-end pb-1">

@@ -2,13 +2,29 @@ import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import Firewall, Alert, UpdateHistory
 from app.schemas import UpdateHistoryResponse
 from app.services.update_service import UpdateService
+from app.services.opnsense_api import OPNsenseAPI
+from app.services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/updates", tags=["updates"])
+
+
+def _install_updates_bg(firewall_id: str, triggered_by: str):
+    """Background task wrapper using its own DB session"""
+    db = SessionLocal()
+    try:
+        firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+        if firewall:
+            import asyncio
+            asyncio.run(UpdateService.install_updates(db, firewall, triggered_by))
+    except Exception as e:
+        logger.error(f"Background update failed: {e}")
+    finally:
+        db.close()
 
 
 @router.post("/firewalls/{firewall_id}/check")
@@ -16,18 +32,35 @@ async def check_updates(
     firewall_id: str,
     db: Session = Depends(get_db)
 ):
-    """Check for available updates on a firewall"""
+    """Check for available updates on a firewall (calls OPNsense API)"""
 
     firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
 
-    # This would call OPNsense API to check
-    # For now, return a placeholder
-    return {
-        "firewall_id": firewall_id,
-        "message": "Update check initiated"
-    }
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path
+        )
+        # Trigger fresh check then fetch status
+        try:
+            await api.check_firmware_updates()
+        except Exception:
+            pass  # check endpoint may not always return JSON
+        status = await api.get_firmware_status()
+        return {
+            "firewall_id": firewall_id,
+            "updates_available": status.get("updates", 0),
+            "current_version": status.get("product_version"),
+            "latest_version": status.get("product_latest"),
+            "download_size": status.get("download_size"),
+            "needs_reboot": str(status.get("upgrade_needs_reboot", "0")) == "1",
+            "status_msg": status.get("status_msg"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
 
 
 @router.post("/firewalls/{firewall_id}/install")
@@ -42,8 +75,8 @@ async def install_updates(
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
 
-    # Add update task to background
-    background_tasks.add_task(UpdateService.install_updates, db, firewall, "manual")
+    # Add update task to background with its own DB session
+    background_tasks.add_task(_install_updates_bg, firewall_id, "manual")
 
     return {
         "firewall_id": firewall_id,

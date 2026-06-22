@@ -31,8 +31,8 @@ class MonitoringService:
         status.checked_at = datetime.utcnow()
 
         try:
-            # Decrypt API secret
-            api_secret = EncryptionService.decrypt(firewall.api_secret).decode() if isinstance(firewall.api_secret, bytes) else firewall.api_secret
+            # Decrypt API secret (decrypt() already returns str)
+            api_secret = EncryptionService.decrypt(firewall.api_secret)
 
             # Initialize API client
             api_client = OPNsenseAPI(
@@ -185,17 +185,25 @@ class MonitoringService:
 
     @staticmethod
     def get_dashboard_summary(db: Session) -> dict:
-        """Get dashboard summary statistics"""
+        """Get dashboard summary statistics based on the latest status per firewall"""
 
         total_fw = db.query(Firewall).count()
-        online_fw = db.query(FirewallStatus).filter(
-            FirewallStatus.online == True
-        ).count()
-        offline_fw = total_fw - online_fw
+        firewalls = db.query(Firewall).all()
 
-        pending_updates = db.query(FirewallStatus).filter(
-            FirewallStatus.updates_available > 0
-        ).count()
+        online_count = 0
+        pending_updates = 0
+
+        for fw in firewalls:
+            latest = db.query(FirewallStatus).filter(
+                FirewallStatus.firewall_id == fw.id
+            ).order_by(FirewallStatus.checked_at.desc()).first()
+
+            if latest and latest.online:
+                online_count += 1
+            if latest and (latest.updates_available or 0) > 0:
+                pending_updates += 1
+
+        offline_count = total_fw - online_count
 
         critical_alerts = db.query(Alert).filter(
             Alert.severity == "critical",
@@ -204,10 +212,10 @@ class MonitoringService:
 
         return {
             "total_firewalls": total_fw,
-            "online_count": online_fw,
-            "offline_count": offline_fw,
+            "online_count": online_count,
+            "offline_count": offline_count,
             "pending_updates": pending_updates,
-            "critical_alerts": critical_alerts
+            "critical_alerts": critical_alerts,
         }
 
     @staticmethod

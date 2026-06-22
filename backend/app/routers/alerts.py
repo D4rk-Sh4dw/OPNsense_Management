@@ -15,13 +15,15 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 async def list_alerts(
     db: Session = Depends(get_db),
     severity: str = None,
-    resolved: bool = False,
+    resolved: bool | None = False,
     limit: int = 100,
     offset: int = 0
 ):
-    """Get alerts with filtering options"""
+    """Get alerts with filtering options. Pass resolved=null to fetch all."""
 
-    query = db.query(Alert).filter(Alert.resolved == resolved)
+    query = db.query(Alert)
+    if resolved is not None:
+        query = query.filter(Alert.resolved == resolved)
 
     if severity:
         query = query.filter(Alert.severity == severity)

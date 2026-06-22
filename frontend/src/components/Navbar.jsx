@@ -41,6 +41,7 @@ export default function Navbar() {
             <li><Link to="/" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Home</Link></li>
             <li><Link to="/dashboard" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Dashboard</Link></li>
             <li><Link to="/firewalls" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Firewalls</Link></li>
+            <li><Link to="/backups" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Backups</Link></li>
             <li><Link to="/alerts" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Alerts</Link></li>
           </ul>
         )}

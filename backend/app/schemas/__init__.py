@@ -191,23 +191,21 @@ class DashboardSummary(BaseModel):
     online_count: int
     offline_count: int
     pending_updates: int
-    pending_backups: int
     critical_alerts: int
-    firewalls_needing_attention: int
 
 
 class FirewallQuickStatus(BaseModel):
     id: UUID
     customer_name: str
-    hostname: str
+    hostname: Optional[str] = None
     ip: str
-    online: bool
-    firmware_version: Optional[str]
-    updates_available: int
-    cpu_usage: Optional[float]
-    ram_usage: Optional[float]
-    last_seen: Optional[datetime]
-    critical_alert: Optional[str]
+    online: Optional[bool] = None
+    firmware_version: Optional[str] = None
+    updates_available: int = 0
+    cpu_usage: Optional[float] = None
+    ram_usage: Optional[float] = None
+    last_seen: Optional[datetime] = None
+    critical_alert: Optional[str] = None
 
 
 # Forward references for recursive models

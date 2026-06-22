@@ -1,14 +1,33 @@
 import logging
 from typing import List
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import Firewall, Backup
 from app.schemas import BackupResponse, BackupCreate
 from app.services.backup_service import BackupService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/backups", tags=["backups"])
+
+
+class RestoreBody(BaseModel):
+    backup_id: str
+
+
+def _create_backup_bg(firewall_id: str, triggered_by: str):
+    """Background task wrapper using its own DB session"""
+    db = SessionLocal()
+    try:
+        firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+        if firewall:
+            import asyncio
+            asyncio.run(BackupService.create_backup(db, firewall, triggered_by))
+    except Exception as e:
+        logger.error(f"Background backup failed: {e}")
+    finally:
+        db.close()
 
 
 @router.get("/firewalls/{firewall_id}", response_model=List[BackupResponse])
@@ -30,9 +49,9 @@ async def list_backups(
 @router.post("/firewalls/{firewall_id}/create")
 async def create_backup(
     firewall_id: str,
-    backup_data: BackupCreate,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    backup_data: BackupCreate | None = None,
 ):
     """Create a new backup of firewall configuration"""
 
@@ -40,13 +59,10 @@ async def create_backup(
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
 
-    # Run backup in background
-    background_tasks.add_task(
-        BackupService.create_backup,
-        db,
-        firewall,
-        backup_data.triggered_by
-    )
+    triggered_by = backup_data.triggered_by if backup_data else "manual"
+
+    # Run backup in background with its own DB session
+    background_tasks.add_task(_create_backup_bg, firewall_id, triggered_by)
 
     return {
         "firewall_id": firewall_id,
@@ -57,7 +73,7 @@ async def create_backup(
 @router.post("/firewalls/{firewall_id}/restore")
 async def restore_backup(
     firewall_id: str,
-    backup_id: str,
+    body: RestoreBody,
     db: Session = Depends(get_db)
 ):
     """Restore a backup to a firewall"""
@@ -66,8 +82,8 @@ async def restore_backup(
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
 
-    backup = db.query(Backup).filter(Backup.id == backup_id).first()
-    if not backup or backup.firewall_id != firewall_id:
+    backup = db.query(Backup).filter(Backup.id == body.backup_id).first()
+    if not backup or str(backup.firewall_id) != str(firewall_id):
         raise HTTPException(status_code=404, detail="Backup not found")
 
     try:
@@ -94,7 +110,7 @@ async def delete_backup(
         raise HTTPException(status_code=404, detail="Firewall not found")
 
     backup = db.query(Backup).filter(Backup.id == backup_id).first()
-    if not backup or backup.firewall_id != firewall_id:
+    if not backup or str(backup.firewall_id) != str(firewall_id):
         raise HTTPException(status_code=404, detail="Backup not found")
 
     import os

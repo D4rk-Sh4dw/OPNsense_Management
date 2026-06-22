@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Boolean, Integer, Float, JSON, Text, ForeignKey, TIMESTAMP, LargeBinary
+from sqlalchemy import Column, String, DateTime, Boolean, Integer, BigInteger, Float, JSON, Text, ForeignKey, TIMESTAMP, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 
@@ -57,7 +57,7 @@ class FirewallStatus(Base):
     updates_available = Column(Integer, default=0)
     cpu_usage = Column(Float)
     ram_usage = Column(Float)
-    uptime_seconds = Column(Integer)
+    uptime_seconds = Column(BigInteger)
     gateway_status = Column(JSON)
     pending_services = Column(JSON, default=list)
     last_error = Column(Text, nullable=True)
@@ -71,7 +71,7 @@ class Backup(Base):
     firewall_id = Column(UUID(as_uuid=True), ForeignKey("firewalls.id"), nullable=False, index=True)
     filename = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)
-    size_bytes = Column(Integer)
+    size_bytes = Column(BigInteger)
     created_at = Column(DateTime, default=datetime.utcnow)
     triggered_by = Column(String(50))  # "manual", "auto", "pre-update"
     last_error = Column(Text, nullable=True)

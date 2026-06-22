@@ -41,7 +41,7 @@ class BackupService:
         """
         try:
             # Decrypt API secret
-            api_secret = EncryptionService.decrypt(firewall.api_secret).decode() if isinstance(firewall.api_secret, bytes) else firewall.api_secret
+            api_secret = EncryptionService.decrypt(firewall.api_secret)
 
             # Initialize API client
             api_client = OPNsenseAPI(
@@ -165,7 +165,7 @@ class BackupService:
         """
         try:
             # Decrypt API secret
-            api_secret = EncryptionService.decrypt(firewall.api_secret).decode() if isinstance(firewall.api_secret, bytes) else firewall.api_secret
+            api_secret = EncryptionService.decrypt(firewall.api_secret)
 
             # Read backup file
             with open(backup_file, "rb") as f:

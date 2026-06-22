@@ -6,7 +6,7 @@ Run this as a separate process: python scheduler.py
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
 from app.config import get_settings
@@ -21,19 +21,15 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-def get_db() -> Session:
-    """Get database session"""
-    db = SessionLocal()
-    try:
-        return db
-    finally:
-        db.close()
+def _new_session() -> Session:
+    """Create a fresh DB session for a scheduled task."""
+    return SessionLocal()
 
 
 async def monitor_all_firewalls():
     """Check health of all firewalls"""
     logger.info("Starting health monitoring...")
-    db = get_db()
+    db = _new_session()
 
     try:
         firewalls = db.query(Firewall).all()
@@ -52,7 +48,7 @@ async def monitor_all_firewalls():
 async def check_license_expiry():
     """Check for expiring licenses and send alerts"""
     logger.info("Checking license expiry...")
-    db = get_db()
+    db = _new_session()
 
     try:
         firewalls = db.query(Firewall).filter(Firewall.license_expiry != None).all()
@@ -102,7 +98,7 @@ async def check_license_expiry():
 async def backup_all_firewalls():
     """Create automated backups"""
     logger.info("Starting backup task...")
-    db = get_db()
+    db = _new_session()
 
     try:
         firewalls = db.query(Firewall).all()
@@ -125,7 +121,7 @@ async def backup_all_firewalls():
 async def auto_update_firewalls():
     """Apply automatic firmware updates within maintenance windows"""
     logger.info("Checking for scheduled updates...")
-    db = get_db()
+    db = _new_session()
 
     try:
         scheduled_updates = UpdateService.get_scheduled_updates_for_window(db)
@@ -141,66 +137,63 @@ async def auto_update_firewalls():
         db.close()
 
 
-def sync_job(coro):
-    """Convert async function to sync for APScheduler"""
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        # Schedule as task
-        loop.create_task(coro)
-    else:
-        loop.run_until_complete(coro)
+def sync_job(coro_factory):
+    """Run an async coroutine in its own event loop from APScheduler thread."""
+    try:
+        asyncio.run(coro_factory())
+    except Exception as e:
+        logger.exception(f"Scheduled job crashed: {e}")
 
 
 def start_scheduler():
-    """Start APScheduler with all tasks"""
+    """Start APScheduler with all tasks (blocking)"""
 
     # Create tables
     Base.metadata.create_all(bind=engine)
 
-    scheduler = BackgroundScheduler()
+    scheduler = BlockingScheduler()
 
     # Add jobs
     scheduler.add_job(
-        lambda: sync_job(monitor_all_firewalls()),
+        sync_job,
         'interval',
         minutes=settings.MONITORING_INTERVAL_MINUTES,
+        args=[monitor_all_firewalls],
         id='monitor_firewalls',
         name='Monitor all firewalls'
     )
 
     scheduler.add_job(
-        lambda: sync_job(check_license_expiry()),
+        sync_job,
         'cron',
         hour=settings.LICENSE_CHECK_HOUR,
+        args=[check_license_expiry],
         id='check_licenses',
         name='Check license expiry'
     )
 
     scheduler.add_job(
-        lambda: sync_job(backup_all_firewalls()),
+        sync_job,
         'cron',
         hour=settings.BACKUP_CHECK_HOUR,
+        args=[backup_all_firewalls],
         id='backup_firewalls',
         name='Create automatic backups'
     )
 
     scheduler.add_job(
-        lambda: sync_job(auto_update_firewalls()),
+        sync_job,
         'cron',
         minute=0,
+        args=[auto_update_firewalls],
         id='auto_updates',
         name='Apply automatic updates'
     )
 
-    scheduler.start()
-    logger.info("Scheduler started with all tasks")
-
-    # Keep running
+    logger.info("Scheduler starting...")
     try:
-        while True:
-            pass
+        scheduler.start()
     except (KeyboardInterrupt, SystemExit):
-        scheduler.shutdown()
         logger.info("Scheduler stopped")
 
 
