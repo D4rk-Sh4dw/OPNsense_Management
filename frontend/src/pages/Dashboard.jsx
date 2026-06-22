@@ -6,19 +6,28 @@ export default function Dashboard() {
   const [firewalls, setFirewalls] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
-    loadData()
-    const interval = setInterval(loadData, 30000)
-    return () => clearInterval(interval)
+    // initial load: fast cached values
+    loadData(false)
   }, [])
 
-  const loadData = async () => {
+  useEffect(() => {
+    if (!autoRefresh) return
+    // poll live status every 5 seconds
+    const interval = setInterval(() => loadData(true), 5000)
+    return () => clearInterval(interval)
+  }, [autoRefresh])
+
+  const loadData = async (live = true) => {
     try {
+      setRefreshing(true)
       setError(null)
       const [summaryRes, firewallsRes] = await Promise.all([
         monitoringAPI.getDashboard(),
-        monitoringAPI.getQuickStatus(),
+        live ? monitoringAPI.getLiveStatus() : monitoringAPI.getQuickStatus(),
       ])
       setSummary(summaryRes.data || summaryRes)
       setFirewalls(firewallsRes.data || firewallsRes)
@@ -27,6 +36,7 @@ export default function Dashboard() {
       setError('Failed to load dashboard data')
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -50,9 +60,24 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-4xl font-black text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Real-time Firewall Management Overview</p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-4xl font-black text-gray-900">Dashboard</h1>
+          <p className="text-gray-600 mt-2">Real-time Firewall Management Overview</p>
+        </div>
+        <div className="flex gap-3 items-center">
+          <label className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg shadow cursor-pointer">
+            <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+            <span className="font-semibold text-gray-700">Live</span>
+            {autoRefresh && (
+              <span className={`w-2 h-2 rounded-full bg-green-500 ${refreshing ? 'animate-pulse' : ''}`}></span>
+            )}
+          </label>
+          <button onClick={() => loadData(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-semibold text-sm">
+            🔄 Refresh
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -123,10 +148,28 @@ export default function Dashboard() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {fw.cpu_usage !== null ? (
+                      {fw.cpu_usage !== null || fw.ram_usage !== null ? (
                         <div className="text-gray-700">
-                          <div>CPU: {fw.cpu_usage?.toFixed(1) || 'N/A'}%</div>
-                          <div>RAM: {fw.ram_usage?.toFixed(1) || 'N/A'}%</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500 w-10">CPU</span>
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                              <div className={`h-2 rounded-full ${
+                                (fw.cpu_usage || 0) > 80 ? 'bg-red-500' :
+                                (fw.cpu_usage || 0) > 50 ? 'bg-yellow-500' : 'bg-green-500'
+                              }`} style={{width: `${Math.min(fw.cpu_usage || 0, 100)}%`}}></div>
+                            </div>
+                            <span className="text-xs font-mono w-12 text-right">{fw.cpu_usage != null ? fw.cpu_usage.toFixed(1) + '%' : '—'}</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-gray-500 w-10">RAM</span>
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                              <div className={`h-2 rounded-full ${
+                                (fw.ram_usage || 0) > 80 ? 'bg-red-500' :
+                                (fw.ram_usage || 0) > 50 ? 'bg-yellow-500' : 'bg-green-500'
+                              }`} style={{width: `${Math.min(fw.ram_usage || 0, 100)}%`}}></div>
+                            </div>
+                            <span className="text-xs font-mono w-12 text-right">{fw.ram_usage != null ? fw.ram_usage.toFixed(1) + '%' : '—'}</span>
+                          </div>
                         </div>
                       ) : (
                         <span className="text-gray-400">—</span>

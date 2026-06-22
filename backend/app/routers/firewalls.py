@@ -215,6 +215,49 @@ async def get_dashboard_firewalls(db: Session = Depends(get_db)):
     return firewalls
 
 
+@router.get("/dashboard/firewalls-live", response_model=List[FirewallQuickStatus])
+async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
+    """Get quick firewall status with fresh CPU/RAM polled live from each firewall in parallel."""
+    import asyncio
+    from app.services.monitoring_service import _parse_memory, _parse_cpu_from_activity
+
+    base = MonitoringService.get_firewall_quick_status(db)
+    firewalls = db.query(Firewall).all()
+    fw_map = {str(f.id): f for f in firewalls}
+
+    async def poll(fw: Firewall):
+        try:
+            api_secret = EncryptionService.decrypt(fw.api_secret)
+            api = OPNsenseAPI(fw.ip, fw.api_key, api_secret, fw.verify_ssl, fw.ssl_cert_path)
+            resources, activity = await asyncio.gather(
+                api.get_system_resources(),
+                api.get_activity(),
+                return_exceptions=True,
+            )
+            return str(fw.id), {
+                "online": True,
+                "cpu": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
+                "ram": _parse_memory(resources) if not isinstance(resources, Exception) else None,
+            }
+        except Exception:
+            return str(fw.id), {"online": False, "cpu": None, "ram": None}
+
+    results = await asyncio.gather(*[poll(fw) for fw in firewalls])
+    live = dict(results)
+
+    for item in base:
+        data = live.get(str(item.id))
+        if not data:
+            continue
+        if data["cpu"] is not None:
+            item.cpu_usage = data["cpu"]
+        if data["ram"] is not None:
+            item.ram_usage = data["ram"]
+        if data["online"] is not None:
+            item.online = data["online"]
+    return base
+
+
 @router.post("/{firewall_id}/fetch-license")
 async def fetch_license_from_firewall(
     firewall_id: str,

@@ -36,6 +36,7 @@ export const firewallsAPI = {
 export const monitoringAPI = {
   getDashboard: () => api.get('/firewalls/dashboard/summary'),
   getQuickStatus: () => api.get('/firewalls/dashboard/firewalls-quick'),
+  getLiveStatus: () => api.get('/firewalls/dashboard/firewalls-live'),
 }
 
 // Backups API
