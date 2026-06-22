@@ -258,15 +258,15 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
     live = await DASHBOARD_CACHE.get_or_fetch("_dashboard", _collect)
 
     for item in base:
-        data = live.get(str(item.id))
+        data = live.get(str(item["id"]))
         if not data:
             continue
         if data["cpu"] is not None:
-            item.cpu_usage = data["cpu"]
+            item["cpu_usage"] = data["cpu"]
         if data["ram"] is not None:
-            item.ram_usage = data["ram"]
+            item["ram_usage"] = data["ram"]
         if data["online"] is not None:
-            item.online = data["online"]
+            item["online"] = data["online"]
     return base
 
 

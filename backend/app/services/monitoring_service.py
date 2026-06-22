@@ -305,7 +305,7 @@ class MonitoringService:
         }
 
     @staticmethod
-    def get_firewall_quick_status(db: Session, limit: int = 10) -> list:
+    def get_firewall_quick_status(db: Session, limit: int = 100) -> list:
         """Get quick status overview of firewalls for dashboard"""
 
         firewalls = db.query(Firewall).limit(limit).all()
