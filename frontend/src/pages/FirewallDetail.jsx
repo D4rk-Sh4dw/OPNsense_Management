@@ -216,6 +216,9 @@ export default function FirewallDetail() {
       ip: firewall.ip || '',
       api_key: firewall.api_key || '',
       notify_email: firewall.notify_email || '',
+      notify_emails_general: firewall.notify_emails_general || '',
+      notify_emails_license: firewall.notify_emails_license || '',
+      license_alert_days: firewall.license_alert_days || '',
       auto_update: !!firewall.auto_update,
       auto_update_window: firewall.auto_update_window || '',
       backup_interval: firewall.backup_interval || 'daily',
@@ -335,7 +338,10 @@ export default function FirewallDetail() {
             <Row label="Auto Update" value={firewall.auto_update ? '✓ Enabled' : 'Disabled'} />
             <Row label="Auto Update Window" value={firewall.auto_update_window || '—'} />
             <Row label="Backup Retention" value={`${firewall.backup_retention} backups`} />
-            <Row label="Notify Email" value={firewall.notify_email || '—'} />
+            <Row label="Notify Email (Fallback)" value={firewall.notify_email || '—'} />
+            <Row label="General Recipients" value={firewall.notify_emails_general || '—'} />
+            <Row label="License Recipients" value={firewall.notify_emails_license || '—'} />
+            <Row label="License Warning Days" value={firewall.license_alert_days || '— (global default)'} />
             <Row label="Created" value={new Date(firewall.created_at).toLocaleDateString()} />
             <Row label="Last Seen" value={firewall.last_seen ? new Date(firewall.last_seen).toLocaleString() : 'Never'} />
           </dl>
@@ -457,8 +463,17 @@ export default function FirewallDetail() {
                 onChange={v => setEditForm({...editForm, api_key: v})} mono />
               <Field label="API Secret (leave empty to keep)" value={editForm.api_secret}
                 onChange={v => setEditForm({...editForm, api_secret: v})} mono type="password" />
-              <Field label="Notify Email" value={editForm.notify_email}
+              <Field label="Notify Email (Legacy / Fallback)" value={editForm.notify_email}
                 onChange={v => setEditForm({...editForm, notify_email: v})} />
+              <Field label="General Alert Recipients (CSV)" value={editForm.notify_emails_general}
+                onChange={v => setEditForm({...editForm, notify_emails_general: v})}
+                placeholder="ops@firma.de, noc@firma.de" />
+              <Field label="License Alert Recipients (CSV)" value={editForm.notify_emails_license}
+                onChange={v => setEditForm({...editForm, notify_emails_license: v})}
+                placeholder="sales@firma.de, kunde@firma.de" />
+              <Field label="License Warning Days (CSV)" value={editForm.license_alert_days}
+                onChange={v => setEditForm({...editForm, license_alert_days: v})}
+                placeholder="30,14,7,1" />
               <SelectField label="License Type" value={editForm.license_type}
                 onChange={v => setEditForm({...editForm, license_type: v})}
                 options={[['', '—'], ['community', 'Community'], ['business', 'Business']]} />
@@ -510,11 +525,11 @@ export default function FirewallDetail() {
   )
 }
 
-function Field({ label, value, onChange, type = 'text', mono = false }) {
+function Field({ label, value, onChange, type = 'text', mono = false, placeholder }) {
   return (
     <div>
       <label className="block text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mb-1">{label}</label>
-      <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
+      <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 ${mono ? 'font-mono text-xs' : ''}`} />
     </div>
   )
