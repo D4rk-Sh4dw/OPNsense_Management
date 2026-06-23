@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import firewalls, backups, updates, alerts
+from app.routers import firewalls, backups, updates, alerts, email
+from app import migrations
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +21,8 @@ async def lifespan(app: FastAPI):
     logger.info("Starting OPNsense CMS...")
     # Create database tables
     Base.metadata.create_all(bind=engine)
+    # Apply lightweight column migrations and seed defaults
+    migrations.run()
     yield
     # Shutdown
     logger.info("Shutting down OPNsense CMS...")
@@ -46,6 +49,7 @@ app.include_router(firewalls.router)
 app.include_router(backups.router)
 app.include_router(updates.router)
 app.include_router(alerts.router)
+app.include_router(email.router)
 
 
 @app.get("/health")

@@ -36,6 +36,9 @@ class FirewallBase(BaseModel):
     hostname: Optional[str] = None
     ip: str
     notify_email: Optional[EmailStr] = None
+    notify_emails_general: Optional[str] = None  # CSV
+    notify_emails_license: Optional[str] = None  # CSV
+    license_alert_days: Optional[str] = None     # CSV e.g. "30,14,7,1"
     auto_update: bool = False
     auto_update_window: str = "sun:02:00"
     backup_interval: str = "daily"
@@ -48,7 +51,7 @@ class FirewallBase(BaseModel):
     def empty_str_to_none_email(cls, v):
         return None if v == "" else v
 
-    @field_validator("hostname", "notes", mode="before")
+    @field_validator("hostname", "notes", "notify_emails_general", "notify_emails_license", "license_alert_days", mode="before")
     @classmethod
     def empty_str_to_none_str(cls, v):
         return None if v == "" else v
@@ -73,6 +76,9 @@ class FirewallUpdate(BaseModel):
     hostname: Optional[str] = None
     ip: Optional[str] = None
     notify_email: Optional[EmailStr] = None
+    notify_emails_general: Optional[str] = None
+    notify_emails_license: Optional[str] = None
+    license_alert_days: Optional[str] = None
     auto_update: Optional[bool] = None
     auto_update_window: Optional[str] = None
     backup_interval: Optional[str] = None
@@ -85,6 +91,11 @@ class FirewallUpdate(BaseModel):
     @field_validator("notify_email", mode="before")
     @classmethod
     def empty_str_to_none_email(cls, v):
+        return None if v == "" else v
+
+    @field_validator("notify_emails_general", "notify_emails_license", "license_alert_days", mode="before")
+    @classmethod
+    def empty_str_to_none_str(cls, v):
         return None if v == "" else v
 
     @field_validator("license_expiry", mode="before")
@@ -210,3 +221,66 @@ class FirewallQuickStatus(BaseModel):
 
 # Forward references for recursive models
 FirewallDetailedResponse.model_rebuild()
+
+
+# ===== Email Template Schemas =====
+class EmailTemplateBase(BaseModel):
+    name: str
+    category: str = "general"
+    subject: str
+    html_body: str
+    plain_body: Optional[str] = None
+    is_active: bool = True
+
+
+class EmailTemplateResponse(EmailTemplateBase):
+    id: UUID
+    key: str
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EmailTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    subject: Optional[str] = None
+    html_body: Optional[str] = None
+    plain_body: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ===== Email Branding Schemas =====
+class EmailBrandingResponse(BaseModel):
+    brand_name: Optional[str] = "OPNsense CMS"
+    logo_url: Optional[str] = None
+    primary_color: Optional[str] = "#4f46e5"
+    accent_color: Optional[str] = "#3b82f6"
+    footer_text: Optional[str] = None
+    reply_to: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EmailBrandingUpdate(BaseModel):
+    brand_name: Optional[str] = None
+    logo_url: Optional[str] = None
+    primary_color: Optional[str] = None
+    accent_color: Optional[str] = None
+    footer_text: Optional[str] = None
+    reply_to: Optional[str] = None
+
+
+class EmailPreviewRequest(BaseModel):
+    template_key: str
+    sample_data: Optional[dict] = None
+
+
+class EmailPreviewResponse(BaseModel):
+    subject: str
+    html: str
+    plain: Optional[str] = None
+    recipients: Optional[List[str]] = None

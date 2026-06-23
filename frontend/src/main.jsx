@@ -10,6 +10,7 @@ import Firewalls from './pages/Firewalls'
 import FirewallDetail from './pages/FirewallDetail'
 import Backups from './pages/Backups'
 import Alerts from './pages/Alerts'
+import EmailSettings from './pages/EmailSettings'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route path="/firewalls/:id" element={<FirewallDetail />} />
             <Route path="/backups" element={<Backups />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/email" element={<EmailSettings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

@@ -14,7 +14,7 @@ from app.models import Firewall, Alert, LicenseNotification
 from app.services.monitoring_service import MonitoringService
 from app.services.backup_service import BackupService
 from app.services.update_service import UpdateService
-from app.services.email_service import EmailService
+from app.services.email_service import EmailService, resolve_firewall_recipients
 from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
 
@@ -55,6 +55,7 @@ async def check_license_expiry():
     try:
         firewalls = db.query(Firewall).filter(Firewall.license_expiry != None).all()
         today = datetime.utcnow()
+        default_thresholds = [int(x) for x in (settings.LICENSE_ALERT_DAYS or "30,14,7,1").split(",") if x.strip().isdigit()]
 
         for fw in firewalls:
             if not fw.license_expiry:
@@ -62,32 +63,35 @@ async def check_license_expiry():
 
             days_until_expiry = (fw.license_expiry.date() - today.date()).days
 
-            # Check for 14, 7, and 1 day thresholds
-            for threshold in [14, 7, 1]:
-                if days_until_expiry == threshold and fw.notify_email:
-                    # Check if we've already sent notification for this threshold
-                    existing = db.query(LicenseNotification).filter(
-                        LicenseNotification.firewall_id == fw.id,
-                        LicenseNotification.days_remaining == threshold
-                    ).first()
+            # Per-firewall thresholds override global default
+            if fw.license_alert_days:
+                thresholds = [int(x) for x in fw.license_alert_days.split(",") if x.strip().isdigit()]
+            else:
+                thresholds = default_thresholds
 
-                    if not existing:
-                        # Send email
-                        EmailService.send_license_expiry_alert(
-                            fw.customer_name,
-                            fw.hostname,
-                            fw.notify_email,
-                            str(fw.license_expiry.date()),
-                            threshold
-                        )
+            recipients = resolve_firewall_recipients(fw, "license")
 
-                        # Record notification
-                        notification = LicenseNotification(
-                            firewall_id=fw.id,
-                            days_remaining=threshold
-                        )
-                        db.add(notification)
-                        logger.info(f"License expiry alert sent for {fw.hostname}: {threshold} days")
+            for threshold in thresholds:
+                if days_until_expiry != threshold or not recipients:
+                    continue
+                # Check if we've already sent notification for this threshold
+                existing = db.query(LicenseNotification).filter(
+                    LicenseNotification.firewall_id == fw.id,
+                    LicenseNotification.days_remaining == threshold
+                ).first()
+                if existing:
+                    continue
+
+                EmailService.send_license_expiry_alert(
+                    fw.customer_name,
+                    fw.hostname,
+                    recipients,
+                    str(fw.license_expiry.date()),
+                    threshold
+                )
+
+                db.add(LicenseNotification(firewall_id=fw.id, days_remaining=threshold))
+                logger.info(f"License expiry alert sent for {fw.hostname}: {threshold} days")
 
         db.commit()
 

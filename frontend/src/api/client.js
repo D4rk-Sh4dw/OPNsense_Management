@@ -66,4 +66,16 @@ export const alertsAPI = {
   delete: (id) => api.delete(`/alerts/${id}`),
 }
 
+// Email API (templates + branding)
+export const emailAPI = {
+  listTemplates: () => api.get('/email/templates'),
+  getTemplate: (key) => api.get(`/email/templates/${key}`),
+  updateTemplate: (key, data) => api.patch(`/email/templates/${key}`, data),
+  preview: (templateKey, sampleData = null) =>
+    api.post('/email/preview', { template_key: templateKey, sample_data: sampleData }),
+  sendTest: (key, recipients) => api.post(`/email/templates/${key}/test`, { recipients }),
+  getBranding: () => api.get('/email/branding'),
+  updateBranding: (data) => api.patch('/email/branding', data),
+}
+
 export default api

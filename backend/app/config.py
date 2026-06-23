@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     BACKUP_CHECK_HOUR: int = 1  # 1 AM daily
     SMART_CHECK_HOUR: int = 3  # 3 AM daily
 
+    # License alerting (CSV of day thresholds, global default if firewall has no override)
+    LICENSE_ALERT_DAYS: str = "30,14,7,1"
+
     # Alerting thresholds
     CPU_ALERT_THRESHOLD: int = 90       # percent
     RAM_ALERT_THRESHOLD: int = 90       # percent

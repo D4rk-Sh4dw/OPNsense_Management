@@ -109,11 +109,13 @@ class UpdateService:
             update_record.completed_at = datetime.utcnow()
 
             # Send alert email
-            if firewall.notify_email:
+            from app.services.email_service import resolve_firewall_recipients
+            recipients = resolve_firewall_recipients(firewall, "general")
+            if recipients:
                 EmailService.send_update_failed_alert(
                     firewall.customer_name,
                     firewall.hostname,
-                    firewall.notify_email,
+                    recipients,
                     str(e)
                 )
 

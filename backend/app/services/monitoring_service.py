@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models import Firewall, FirewallStatus, Alert
 from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
-from app.services.email_service import EmailService
+from app.services.email_service import EmailService, resolve_firewall_recipients
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -44,18 +44,20 @@ def raise_alert(
     db.commit()
     db.refresh(alert)
 
-    if send_email and firewall.notify_email:
-        try:
-            EmailService.send_generic_alert(
-                customer_name=firewall.customer_name,
-                hostname=firewall.hostname or firewall.ip,
-                notify_email=firewall.notify_email,
-                severity=severity,
-                title=title or alert_type.replace("_", " ").title(),
-                details=message,
-            )
-        except Exception as e:
-            logger.warning(f"Alert email failed for {firewall.hostname}: {e}")
+    if send_email:
+        recipients = resolve_firewall_recipients(firewall, "general")
+        if recipients:
+            try:
+                EmailService.send_generic_alert(
+                    customer_name=firewall.customer_name,
+                    hostname=firewall.hostname or firewall.ip,
+                    notify_email=recipients,
+                    severity=severity,
+                    title=title or alert_type.replace("_", " ").title(),
+                    details=message,
+                )
+            except Exception as e:
+                logger.warning(f"Alert email failed for {firewall.hostname}: {e}")
 
     return alert
 

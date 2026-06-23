@@ -1,241 +1,252 @@
+"""E-mail service with template + branding support.
+
+All transactional e-mails go through `EmailService.send` which:
+* loads the EmailTemplate row from DB by `key`
+* injects branding into a branded HTML layout
+* uses str.format_map with safe defaults for missing variables
+* supports multiple recipients (CSV / list)
+"""
+
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import re
 import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from app.config import get_settings
+from app.database import SessionLocal
+from app.models import EmailBrandingSettings, EmailTemplate
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-class EmailService:
-    """Service for sending emails via SMTP"""
+class _SafeDict(dict):
+    """dict subclass that returns the original placeholder for missing keys."""
 
-    @staticmethod
-    def send_email(
-        to_email: str,
-        subject: str,
-        html_content: str,
-        plain_text: str = None
-    ) -> bool:
-        """
-        Send email notification
+    def __missing__(self, key):
+        return "{" + key + "}"
 
-        Args:
-            to_email: Recipient email address
-            subject: Email subject
-            html_content: HTML email body
-            plain_text: Plain text fallback
 
-        Returns:
-            True if successful, False otherwise
-        """
+def _parse_recipients(value) -> list[str]:
+    """Normalise CSV / iterable / single string into a deduplicated list."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        parts = re.split(r"[,;\s]+", value)
+    else:
         try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = settings.SMTP_FROM
-            msg["To"] = to_email
+            parts = list(value)
+        except TypeError:
+            parts = [str(value)]
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        if not p:
+            continue
+        addr = str(p).strip()
+        if not addr or addr in seen or "@" not in addr:
+            continue
+        seen.add(addr)
+        cleaned.append(addr)
+    return cleaned
 
-            # Attach plain text version
-            if plain_text:
-                msg.attach(MIMEText(plain_text, "plain"))
 
-            # Attach HTML version
-            msg.attach(MIMEText(html_content, "html"))
+def _load_branding() -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(EmailBrandingSettings).first()
+        if not row:
+            return {
+                "brand_name": "OPNsense CMS",
+                "logo_url": None,
+                "primary_color": "#4f46e5",
+                "accent_color": "#3b82f6",
+                "footer_text": None,
+                "reply_to": None,
+            }
+        return {
+            "brand_name": row.brand_name or "OPNsense CMS",
+            "logo_url": row.logo_url,
+            "primary_color": row.primary_color or "#4f46e5",
+            "accent_color": row.accent_color or "#3b82f6",
+            "footer_text": row.footer_text,
+            "reply_to": row.reply_to,
+        }
+    finally:
+        db.close()
 
-            # Connect and send
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-                if settings.SMTP_USE_TLS:
-                    server.starttls()
-                if settings.SMTP_USER and settings.SMTP_PASSWORD:
-                    server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                server.send_message(msg)
 
-            logger.info(f"Email sent to {to_email}: {subject}")
-            return True
+def _load_template(key: str):
+    db = SessionLocal()
+    try:
+        return db.query(EmailTemplate).filter(EmailTemplate.key == key).first()
+    finally:
+        db.close()
 
-        except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
-            return False
 
-    @staticmethod
-    def send_license_expiry_alert(
-        customer_name: str,
-        hostname: str,
-        notify_email: str,
-        expiry_date: str,
-        days_remaining: int
-    ) -> bool:
-        """Send license expiry warning email"""
+def _wrap_html(body: str, branding: dict) -> str:
+    """Wrap the template body in a branded HTML layout."""
+    brand = branding.get("brand_name") or "OPNsense CMS"
+    logo = branding.get("logo_url")
+    primary = branding.get("primary_color") or "#4f46e5"
+    footer = branding.get("footer_text") or "Automated message - please do not reply."
 
-        subject = f"[OPNsense CMS] License Expiry Alert - {customer_name}"
+    logo_html = (
+        f'<img src="{logo}" alt="{brand}" style="max-height:48px;display:block;">'
+        if logo
+        else f'<h1 style="margin:0;color:#fff;font-size:20px;">{brand}</h1>'
+    )
 
-        plain_text = f"""
-License Expiry Alert
+    return f"""<!DOCTYPE html>
+<html><head><meta charset=\"UTF-8\"></head>
+<body style=\"margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827;\">
+  <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"background:#f3f4f6;padding:24px 0;\">
+    <tr><td align=\"center\">
+      <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"600\" style=\"background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);\">
+        <tr><td style=\"background:{primary};padding:20px 24px;color:#fff;\">{logo_html}</td></tr>
+        <tr><td style=\"padding:24px;line-height:1.5;font-size:14px;color:#111827;\">{body}</td></tr>
+        <tr><td style=\"padding:16px 24px;background:#f9fafb;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;text-align:center;\">{footer}</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
 
-Customer: {customer_name}
-Firewall: {hostname}
-License Expiry: {expiry_date}
-Days Remaining: {days_remaining}
 
-Please renew your license to avoid service interruption.
-        """
+def _render(template_text: str, context: dict) -> str:
+    if not template_text:
+        return ""
+    try:
+        return template_text.format_map(_SafeDict(context))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Template render failed: {e}")
+        return template_text
 
-        html_content = f"""
-        <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #d9534f;">License Expiry Alert</h2>
-                <p><strong>Customer:</strong> {customer_name}</p>
-                <p><strong>Firewall:</strong> {hostname}</p>
-                <p><strong>License Expiry:</strong> {expiry_date}</p>
-                <p><strong style="color: #d9534f;">Days Remaining:</strong> {days_remaining}</p>
-                <p style="color: #666;">Please renew your license to avoid service interruption.</p>
-            </body>
-        </html>
-        """
 
-        return EmailService.send_email(notify_email, subject, html_content, plain_text)
+def _send_smtp(to_emails: list[str], subject: str, html: str, plain: str | None, reply_to: str | None) -> bool:
+    if not to_emails:
+        logger.info("No recipients - skipping e-mail")
+        return False
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = settings.SMTP_FROM
+        msg["To"] = ", ".join(to_emails)
+        if reply_to:
+            msg["Reply-To"] = reply_to
+        if plain:
+            msg.attach(MIMEText(plain, "plain", "utf-8"))
+        msg.attach(MIMEText(html, "html", "utf-8"))
 
-    @staticmethod
-    def send_update_failed_alert(
-        customer_name: str,
-        hostname: str,
-        notify_email: str,
-        error_message: str
-    ) -> bool:
-        """Send firmware update failure alert"""
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            if settings.SMTP_USE_TLS:
+                server.starttls()
+            if settings.SMTP_USER and settings.SMTP_PASSWORD:
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM, to_emails, msg.as_string())
 
-        subject = f"[OPNsense CMS] Update Failed - {customer_name}"
+        logger.info(f"Email sent to {to_emails}: {subject}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Failed to send email to {to_emails}: {e}")
+        return False
 
-        plain_text = f"""
-Firmware Update Failed
 
-Customer: {customer_name}
-Firewall: {hostname}
-Error: {error_message}
-
-Please review the update and retry manually if needed.
-        """
-
-        html_content = f"""
-        <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #d9534f;">Firmware Update Failed</h2>
-                <p><strong>Customer:</strong> {customer_name}</p>
-                <p><strong>Firewall:</strong> {hostname}</p>
-                <p><strong style="color: #d9534f;">Error:</strong> {error_message}</p>
-                <p style="color: #666;">Please review the update and retry manually if needed.</p>
-            </body>
-        </html>
-        """
-
-        return EmailService.send_email(notify_email, subject, html_content, plain_text)
-
-    @staticmethod
-    def send_offline_alert(
-        customer_name: str,
-        hostname: str,
-        notify_email: str
-    ) -> bool:
-        """Send firewall offline alert"""
-
-        subject = f"[OPNsense CMS] Firewall Offline - {customer_name}"
-
-        plain_text = f"""
-Firewall Offline Alert
-
-Customer: {customer_name}
-Firewall: {hostname}
-
-The firewall is not responding. Please verify connectivity and status.
-        """
-
-        html_content = f"""
-        <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #d9534f;">Firewall Offline</h2>
-                <p><strong>Customer:</strong> {customer_name}</p>
-                <p><strong>Firewall:</strong> {hostname}</p>
-                <p style="color: #666;">The firewall is not responding. Please verify connectivity and status.</p>
-            </body>
-        </html>
-        """
-
-        return EmailService.send_email(notify_email, subject, html_content, plain_text)
+class EmailService:
+    """High-level interface used by the rest of the application."""
 
     @staticmethod
-    def send_smart_error_alert(
-        customer_name: str,
-        hostname: str,
-        notify_email: str,
-        device: str,
-        status: str
-    ) -> bool:
-        """Send S.M.A.R.T. failure alert"""
+    def render(template_key: str, context: dict | None = None) -> dict:
+        tpl = _load_template(template_key)
+        branding = _load_branding()
+        ctx = {**branding, **(context or {})}
 
-        subject = f"[OPNsense CMS] Disk Health Critical - {customer_name}"
+        if not tpl:
+            return {
+                "subject": ctx.get("title", "Notification"),
+                "html": _wrap_html(f"<p>{ctx.get('details', '')}</p>", branding),
+                "plain": ctx.get("details") or "",
+            }
 
-        plain_text = f"""
-Disk S.M.A.R.T. Error
-
-Customer: {customer_name}
-Firewall: {hostname}
-Device: {device}
-Status: {status}
-
-The disk may be failing. Plan replacement immediately.
-        """
-
-        html_content = f"""
-        <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: #d9534f;">Disk S.M.A.R.T. Error</h2>
-                <p><strong>Customer:</strong> {customer_name}</p>
-                <p><strong>Firewall:</strong> {hostname}</p>
-                <p><strong>Device:</strong> {device}</p>
-                <p><strong style="color: #d9534f;">Status:</strong> {status}</p>
-                <p style="color: #666;">The disk may be failing. Plan replacement immediately.</p>
-            </body>
-        </html>
-        """
-
-        return EmailService.send_email(notify_email, subject, html_content, plain_text)
+        subject = _render(tpl.subject, ctx)
+        html_body = _render(tpl.html_body, ctx)
+        plain = _render(tpl.plain_body, ctx) if tpl.plain_body else None
+        return {"subject": subject, "html": _wrap_html(html_body, branding), "plain": plain}
 
     @staticmethod
-    def send_generic_alert(
-        customer_name: str,
-        hostname: str,
-        notify_email: str,
-        severity: str,
-        title: str,
-        details: str,
-    ) -> bool:
-        """Generic alert email used by health/threshold checks."""
-        color = {
-            "critical": "#d9534f",
-            "warning": "#f0ad4e",
-            "info": "#5bc0de",
-        }.get(severity, "#5bc0de")
+    def send(template_key: str, recipients, context: dict | None = None) -> bool:
+        rendered = EmailService.render(template_key, context)
+        addrs = _parse_recipients(recipients)
+        branding = _load_branding()
+        return _send_smtp(addrs, rendered["subject"], rendered["html"], rendered.get("plain"), branding.get("reply_to"))
 
-        subject = f"[OPNsense CMS] {title} - {customer_name}"
-        plain_text = (
-            f"{title}\n\n"
-            f"Customer: {customer_name}\n"
-            f"Firewall: {hostname}\n"
-            f"Severity: {severity.upper()}\n\n"
-            f"{details}\n"
+    @staticmethod
+    def send_email(to_email, subject: str, html_content: str, plain_text: str | None = None) -> bool:
+        branding = _load_branding()
+        addrs = _parse_recipients(to_email)
+        return _send_smtp(addrs, subject, html_content, plain_text, branding.get("reply_to"))
+
+    # ---- typed wrappers -----------------------------------------------
+    @staticmethod
+    def send_license_expiry_alert(customer_name, hostname, notify_email, expiry_date, days_remaining) -> bool:
+        return EmailService.send(
+            "license_expiry",
+            notify_email,
+            {
+                "customer_name": customer_name,
+                "hostname": hostname,
+                "expiry_date": expiry_date,
+                "days_remaining": days_remaining,
+            },
         )
-        html_content = f"""
-        <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2 style="color: {color};">{title}</h2>
-                <p><strong>Customer:</strong> {customer_name}</p>
-                <p><strong>Firewall:</strong> {hostname}</p>
-                <p><strong>Severity:</strong> <span style="color: {color}; font-weight: bold;">{severity.upper()}</span></p>
-                <hr/>
-                <p style="white-space: pre-wrap;">{details}</p>
-            </body>
-        </html>
-        """
-        return EmailService.send_email(notify_email, subject, html_content, plain_text)
 
+    @staticmethod
+    def send_update_failed_alert(customer_name, hostname, notify_email, error_message) -> bool:
+        return EmailService.send(
+            "update_failed",
+            notify_email,
+            {"customer_name": customer_name, "hostname": hostname, "error_message": error_message},
+        )
+
+    @staticmethod
+    def send_offline_alert(customer_name, hostname, notify_email) -> bool:
+        return EmailService.send(
+            "offline", notify_email, {"customer_name": customer_name, "hostname": hostname}
+        )
+
+    @staticmethod
+    def send_smart_error_alert(customer_name, hostname, notify_email, device, status) -> bool:
+        return EmailService.send(
+            "smart_error",
+            notify_email,
+            {"customer_name": customer_name, "hostname": hostname, "device": device, "status": status},
+        )
+
+    @staticmethod
+    def send_generic_alert(customer_name, hostname, notify_email, severity, title, details) -> bool:
+        return EmailService.send(
+            "generic",
+            notify_email,
+            {
+                "customer_name": customer_name,
+                "hostname": hostname,
+                "severity": (severity or "info").upper(),
+                "title": title,
+                "details": details,
+            },
+        )
+
+
+parse_recipients = _parse_recipients
+
+
+def resolve_firewall_recipients(firewall, kind: str = "general") -> list[str]:
+    """Build the recipient list for a firewall depending on the alert kind.
+
+    kind is "general" or "license". Falls back to the legacy ``notify_email`` field.
+    """
+    primary = getattr(firewall, f"notify_emails_{kind}", None)
+    addrs = _parse_recipients(primary)
+    if not addrs:
+        addrs = _parse_recipients(getattr(firewall, "notify_email", None))
+    return addrs

@@ -9,6 +9,9 @@ const EMPTY_FORM = {
   api_key: '',
   api_secret: '',
   notify_email: '',
+  notify_emails_general: '',
+  notify_emails_license: '',
+  license_alert_days: '30,14,7,1',
   license_expiry: '',
   license_type: '',
   auto_update: false,
@@ -164,9 +167,41 @@ export default function Firewalls() {
             </div>
 
             {/* Section: Notifications */}
-            <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3">Notifications & Licensing</p>
+            <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3">Alerting (General)</p>
             <div className="grid md:grid-cols-2 gap-4 mb-6">
-              <Field label="Notification Email" name="notify_email" value={formData.notify_email} onChange={handleInputChange} placeholder="admin@firma.de" type="email" />
+              <Field
+                label="General Alert Recipients"
+                name="notify_emails_general"
+                value={formData.notify_emails_general}
+                onChange={handleInputChange}
+                placeholder="ops@firma.de, noc@firma.de"
+              />
+              <Field
+                label="Legacy / Fallback Email"
+                name="notify_email"
+                value={formData.notify_email}
+                onChange={handleInputChange}
+                placeholder="admin@firma.de"
+                type="email"
+              />
+            </div>
+
+            <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3">Alerting (License)</p>
+            <div className="grid md:grid-cols-2 gap-4 mb-6">
+              <Field
+                label="License Alert Recipients"
+                name="notify_emails_license"
+                value={formData.notify_emails_license}
+                onChange={handleInputChange}
+                placeholder="sales@firma.de, kunde@firma.de"
+              />
+              <Field
+                label="License Warning Days (CSV)"
+                name="license_alert_days"
+                value={formData.license_alert_days}
+                onChange={handleInputChange}
+                placeholder="30,14,7,1"
+              />
               <Field label="License Expiry Date" name="license_expiry" value={formData.license_expiry} onChange={handleInputChange} type="date" />
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">License Type</label>

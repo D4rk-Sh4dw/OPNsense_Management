@@ -32,7 +32,10 @@ class Firewall(Base):
     verify_ssl = Column(Boolean, default=False)
     ssl_cert_path = Column(String(500), nullable=True)
     license_expiry = Column(DateTime, nullable=True)
-    notify_email = Column(String(255))
+    notify_email = Column(String(255))  # legacy: single email (kept for backward compat)
+    notify_emails_general = Column(Text, nullable=True)  # CSV of recipients for general alerts
+    notify_emails_license = Column(Text, nullable=True)  # CSV of recipients for license alerts
+    license_alert_days = Column(String(100), nullable=True)  # CSV of day thresholds e.g. "30,14,7,1"
     auto_update = Column(Boolean, default=False)
     auto_update_window = Column(String(20), default="sun:02:00")  # day:HH:MM format
     backup_interval = Column(String(20), default="daily")  # "daily" or "weekly"
@@ -115,3 +118,32 @@ class LicenseNotification(Base):
     firewall_id = Column(UUID(as_uuid=True), ForeignKey("firewalls.id"), nullable=False, index=True)
     days_remaining = Column(Integer, nullable=False)  # 14, 7, or 1
     sent_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailTemplate(Base):
+    """Editable e-mail templates with placeholder support."""
+    __tablename__ = "email_templates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key = Column(String(50), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    category = Column(String(20), default="general")  # "general" | "license"
+    subject = Column(String(500), nullable=False)
+    html_body = Column(Text, nullable=False)
+    plain_body = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EmailBrandingSettings(Base):
+    """Singleton row holding brand assets used in all e-mails."""
+    __tablename__ = "email_branding_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    brand_name = Column(String(255), default="OPNsense CMS")
+    logo_url = Column(Text, nullable=True)  # URL or data: URI
+    primary_color = Column(String(20), default="#4f46e5")
+    accent_color = Column(String(20), default="#3b82f6")
+    footer_text = Column(Text, nullable=True)
+    reply_to = Column(String(255), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
