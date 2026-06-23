@@ -68,7 +68,7 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="p-8">
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 px-4 py-3 rounded">
           {error}
         </div>
       </div>
@@ -79,20 +79,20 @@ export default function Dashboard() {
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8 flex justify-between items-start">
         <div>
-          <h1 className="text-4xl font-black text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-2">Real-time Firewall Management Overview</p>
+          <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">Dashboard</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">Real-time Firewall Management Overview</p>
         </div>
         <div className="flex gap-3 items-center">
-          <label className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg shadow cursor-pointer">
+          <label className="flex items-center gap-2 text-sm bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow cursor-pointer">
             <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
-            <span className="font-semibold text-gray-700">Live</span>
+            <span className="font-semibold text-gray-700 dark:text-gray-300">Live</span>
             {autoRefresh && (
               <span className={`w-2 h-2 rounded-full bg-green-500 ${refreshing ? 'animate-pulse' : ''}`}></span>
             )}
           </label>
           {autoRefresh && (
             <select value={intervalSec} onChange={e => setIntervalSec(parseInt(e.target.value))}
-              className="text-sm bg-white px-3 py-2 rounded-lg shadow border-0 font-semibold text-gray-700">
+              className="text-sm bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow border-0 font-semibold text-gray-700 dark:text-gray-300">
               <option value="10">10s</option>
               <option value="15">15s</option>
               <option value="30">30s</option>
@@ -137,7 +137,7 @@ export default function Dashboard() {
       )}
 
       {/* Firewalls Table */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
@@ -151,34 +151,34 @@ export default function Dashboard() {
                 <th className="px-6 py-4 text-left text-sm font-semibold">Resources</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {firewalls && firewalls.length > 0 ? (
                 firewalls.map((fw) => (
-                  <tr key={fw.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 font-semibold text-gray-900">{fw.customer_name}</td>
-                    <td className="px-6 py-4 text-gray-700">{fw.hostname || 'N/A'}</td>
-                    <td className="px-6 py-4 text-gray-600 font-mono text-sm">{fw.ip}</td>
+                  <tr key={fw.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
+                    <td className="px-6 py-4 font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</td>
+                    <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || 'N/A'}</td>
+                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400 font-mono text-sm">{fw.ip}</td>
                     <td className="px-6 py-4">
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        fw.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        fw.online ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
                       }`}>
                         {fw.online ? '🟢 Online' : '🔴 Offline'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-700 text-sm">{fw.firmware_version || 'Unknown'}</td>
+                    <td className="px-6 py-4 text-gray-700 dark:text-gray-300 text-sm">{fw.firmware_version || 'Unknown'}</td>
                     <td className="px-6 py-4">
                       {fw.updates_available > 0 ? (
-                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">⚡ {fw.updates_available}</span>
+                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 rounded-full text-xs font-bold">⚡ {fw.updates_available}</span>
                       ) : (
-                        <span className="text-green-600 font-bold">✓ Latest</span>
+                        <span className="text-green-600 dark:text-green-400 font-bold">✓ Latest</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
                       {fw.cpu_usage !== null || fw.ram_usage !== null ? (
-                        <div className="text-gray-700">
+                        <div className="text-gray-700 dark:text-gray-300">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 w-10">CPU</span>
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 w-10">CPU</span>
+                            <div className="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-2 w-20">
                               <div className={`h-2 rounded-full ${
                                 (fw.cpu_usage || 0) > 80 ? 'bg-red-500' :
                                 (fw.cpu_usage || 0) > 50 ? 'bg-yellow-500' : 'bg-green-500'
@@ -187,8 +187,8 @@ export default function Dashboard() {
                             <span className="text-xs font-mono w-12 text-right">{fw.cpu_usage != null ? fw.cpu_usage.toFixed(1) + '%' : '—'}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-gray-500 w-10">RAM</span>
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-20">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 w-10">RAM</span>
+                            <div className="flex-1 bg-gray-200 dark:bg-gray-600 rounded-full h-2 w-20">
                               <div className={`h-2 rounded-full ${
                                 (fw.ram_usage || 0) > 80 ? 'bg-red-500' :
                                 (fw.ram_usage || 0) > 50 ? 'bg-yellow-500' : 'bg-green-500'
@@ -205,7 +205,7 @@ export default function Dashboard() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     No firewalls registered yet. Go to Firewalls tab to add one.
                   </td>
                 </tr>
@@ -238,3 +238,7 @@ function SummaryCard({ title, value, icon, color }) {
     </div>
   )
 }
+
+
+
+

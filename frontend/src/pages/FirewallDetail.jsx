@@ -258,14 +258,14 @@ export default function FirewallDetail() {
   )
 
   if (error || !firewall) return (
-    <div className="p-8 text-red-600">{error || 'Not found'}</div>
+    <div className="p-8 text-red-600 dark:text-red-400">{error || 'Not found'}</div>
   )
 
   const licenseColor = firewall.license_type === 'business'
     ? 'bg-purple-100 text-purple-800'
     : firewall.license_type === 'community'
     ? 'bg-blue-100 text-blue-800'
-    : 'bg-gray-100 text-gray-600'
+    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -278,19 +278,19 @@ export default function FirewallDetail() {
 
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
-        <Link to="/firewalls" className="text-indigo-600 hover:text-indigo-800">← Back</Link>
+        <Link to="/firewalls" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800">← Back</Link>
         <div className="flex-1">
-          <h1 className="text-4xl font-black text-gray-900">{firewall.customer_name}</h1>
-          <p className="text-gray-500">{firewall.hostname || firewall.ip}</p>
+          <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">{firewall.customer_name}</h1>
+          <p className="text-gray-500 dark:text-gray-400">{firewall.hostname || firewall.ip}</p>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <label className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg shadow cursor-pointer">
+          <label className="flex items-center gap-2 text-sm bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow cursor-pointer">
             <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
-            <span className="font-semibold text-gray-700">Live</span>
+            <span className="font-semibold text-gray-700 dark:text-gray-300">Live</span>
             {autoRefresh && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
           </label>
           <button onClick={openEdit}
-            className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition font-semibold">
+            className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 transition font-semibold">
             ✎ Edit
           </button>
           <button onClick={handleHealthCheck} disabled={loadingHealth}
@@ -326,8 +326,8 @@ export default function FirewallDetail() {
 
       <div className="grid md:grid-cols-2 gap-6 mb-8">
         {/* Firewall Info */}
-        <div className="bg-white rounded-xl shadow p-6">
-          <h2 className="text-xl font-bold mb-4 text-gray-900">Firewall Info</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+          <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Firewall Info</h2>
           <dl className="space-y-3 text-sm">
             <Row label="IP / URL" value={firewall.ip} mono />
             <Row label="API Key" value={firewall.api_key} mono />
@@ -342,9 +342,9 @@ export default function FirewallDetail() {
         </div>
 
         {/* License Info */}
-        <div className="bg-white rounded-xl shadow p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-gray-900">License</h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">License</h2>
             <button onClick={handleFetchLicense} disabled={loadingLicense}
               className="text-sm bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-200 transition disabled:opacity-50 font-semibold">
               {loadingLicense ? '...' : '🔍 Fetch from Firewall'}
@@ -361,7 +361,7 @@ export default function FirewallDetail() {
           {firewall.notes && (
             <div className="mt-4 pt-4 border-t">
               <p className="text-xs font-bold uppercase text-gray-400 mb-1">Notes</p>
-              <p className="text-sm text-gray-700">{firewall.notes}</p>
+              <p className="text-sm text-gray-700 dark:text-gray-300">{firewall.notes}</p>
             </div>
           )}
         </div>
@@ -386,22 +386,22 @@ export default function FirewallDetail() {
       />
 
       {/* S.M.A.R.T. Disk Health */}
-      <div className="bg-white rounded-xl shadow p-6 mt-8">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mt-8">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-gray-900">S.M.A.R.T. Disk Health</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">S.M.A.R.T. Disk Health</h2>
           <button onClick={loadSmart} disabled={loadingSmart}
-            className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg font-semibold disabled:opacity-50">
+            className="text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:bg-gray-600 px-3 py-1 rounded-lg font-semibold disabled:opacity-50">
             {loadingSmart ? '...' : '🔄 Refresh'}
           </button>
         </div>
         {loadingSmart ? (
-          <p className="text-gray-500 text-sm">Loading SMART data...</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Loading SMART data...</p>
         ) : !smart?.available ? (
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-500 dark:text-gray-400 text-sm">
             SMART unavailable {smart?.reason ? `(${smart.reason})` : ''}. Install the <span className="font-mono">os-smart</span> plugin on the firewall.
           </p>
         ) : smart.devices.length === 0 ? (
-          <p className="text-gray-500 text-sm">No SMART-capable devices detected.</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">No SMART-capable devices detected.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -424,10 +424,10 @@ export default function FirewallDetail() {
                     <td className="py-2 pr-4">
                       <span className={`px-2 py-1 rounded text-xs font-bold ${
                         String(d.status).toUpperCase() === 'PASSED' || String(d.status).toUpperCase() === 'OK'
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
                           : String(d.status).toUpperCase() === 'FAILED'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-700'
+                          ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }`}>{d.status || 'unknown'}</span>
                     </td>
                   </tr>
@@ -441,10 +441,10 @@ export default function FirewallDetail() {
       {/* Edit Modal */}
       {editOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
-              <h3 className="text-2xl font-black text-gray-900">Edit Firewall</h3>
-              <p className="text-sm text-gray-600 mt-1">{firewall.customer_name}</p>
+              <h3 className="text-2xl font-black text-gray-900 dark:text-gray-100">Edit Firewall</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{firewall.customer_name}</p>
             </div>
             <div className="p-6 grid md:grid-cols-2 gap-4 text-sm">
               <Field label="Customer Name" value={editForm.customer_name}
@@ -486,7 +486,7 @@ export default function FirewallDetail() {
                 </label>
               </div>
               <div className="col-span-2">
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Notes</label>
+                <label className="block text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mb-1">Notes</label>
                 <textarea value={editForm.notes}
                   onChange={e => setEditForm({...editForm, notes: e.target.value})}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
@@ -495,7 +495,7 @@ export default function FirewallDetail() {
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
               <button onClick={() => setEditOpen(false)}
-                className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 font-semibold">
+                className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:bg-gray-600 font-semibold">
                 Cancel
               </button>
               <button onClick={saveEdit} disabled={savingEdit}
@@ -513,7 +513,7 @@ export default function FirewallDetail() {
 function Field({ label, value, onChange, type = 'text', mono = false }) {
   return (
     <div>
-      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">{label}</label>
+      <label className="block text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mb-1">{label}</label>
       <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
         className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 ${mono ? 'font-mono text-xs' : ''}`} />
     </div>
@@ -523,9 +523,9 @@ function Field({ label, value, onChange, type = 'text', mono = false }) {
 function SelectField({ label, value, onChange, options }) {
   return (
     <div>
-      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">{label}</label>
+      <label className="block text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mb-1">{label}</label>
       <select value={value ?? ''} onChange={e => onChange(e.target.value)}
-        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white">
+        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white dark:bg-gray-800">
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </div>
@@ -534,12 +534,12 @@ function SelectField({ label, value, onChange, options }) {
 
 function StatCard({ label, value, live }) {
   return (
-    <div className="bg-white rounded-xl shadow p-4 relative">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 relative">
       <p className="text-xs font-bold uppercase text-gray-400 mb-1 flex items-center gap-2">
         {label}
         {live && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
       </p>
-      <p className="text-lg font-bold text-gray-900">{value}</p>
+      <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</p>
     </div>
   )
 }
@@ -547,8 +547,8 @@ function StatCard({ label, value, live }) {
 function Row({ label, value, mono = false }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="font-semibold text-gray-500 shrink-0">{label}</dt>
-      <dd className={`text-right text-gray-900 ${mono ? 'font-mono text-xs break-all' : ''}`}>{value}</dd>
+      <dt className="font-semibold text-gray-500 dark:text-gray-400 shrink-0">{label}</dt>
+      <dd className={`text-right text-gray-900 dark:text-gray-100 ${mono ? 'font-mono text-xs break-all' : ''}`}>{value}</dd>
     </div>
   )
 }
@@ -566,11 +566,11 @@ function GatewayStatusCard({ data }) {
 
   const statusBadge = (status) => {
     const s = String(status || '').toLowerCase()
-    if (!s || s === 'none') return 'bg-gray-100 text-gray-500'
-    if (s.includes('online') && !s.includes('loss') && !s.includes('delay')) return 'bg-green-100 text-green-800'
-    if (s.includes('warning') || s.includes('delay') || s.includes('loss')) return 'bg-yellow-100 text-yellow-800'
-    if (s.includes('offline') || s.includes('down') || s.includes('force')) return 'bg-red-100 text-red-800'
-    return 'bg-gray-100 text-gray-700'
+    if (!s || s === 'none') return 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+    if (s.includes('online') && !s.includes('loss') && !s.includes('delay')) return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+    if (s.includes('warning') || s.includes('delay') || s.includes('loss')) return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200'
+    if (s.includes('offline') || s.includes('down') || s.includes('force')) return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+    return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
   }
 
   const statusLabel = (g) => {
@@ -593,8 +593,8 @@ function GatewayStatusCard({ data }) {
   if (gateways.length === 0) return null
 
   return (
-    <div className="bg-white rounded-xl shadow p-6 mb-8">
-      <h2 className="text-xl font-bold mb-4 text-gray-900">Gateway Status</h2>
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mb-8">
+      <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">Gateway Status</h2>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
@@ -612,10 +612,10 @@ function GatewayStatusCard({ data }) {
             {gateways.map((g, i) => {
               const loss = parseFloat(g.loss) || 0
               return (
-                <tr key={i} className="border-b hover:bg-gray-50">
+                <tr key={i} className="border-b hover:bg-gray-50 dark:bg-gray-900">
                   <td className="py-3 pr-4 font-semibold">{g.name || '—'}</td>
                   <td className="py-3 pr-4 font-mono text-xs">{g.address || g.gateway || '—'}</td>
-                  <td className="py-3 pr-4 font-mono text-xs text-gray-500">{g.monitor || '—'}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-gray-500 dark:text-gray-400">{g.monitor || '—'}</td>
                   <td className="py-3 pr-4">
                     <span className={`px-2 py-1 rounded text-xs font-bold ${statusBadge(g.status)}`}>
                       {statusLabel(g)}
@@ -623,7 +623,7 @@ function GatewayStatusCard({ data }) {
                   </td>
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 bg-gray-200 rounded-full h-2">
+                      <div className="w-16 bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                         <div className={`h-2 rounded-full ${lossBarColor(g.loss)}`}
                           style={{ width: `${Math.min(loss, 100)}%` }}></div>
                       </div>
@@ -631,7 +631,7 @@ function GatewayStatusCard({ data }) {
                     </div>
                   </td>
                   <td className="py-3 pr-4 font-mono text-xs">{g.delay || '—'}</td>
-                  <td className="py-3 pr-4 font-mono text-xs text-gray-500">{g.stddev || '—'}</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-gray-500 dark:text-gray-400">{g.stddev || '—'}</td>
                 </tr>
               )
             })}
@@ -714,17 +714,17 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
   }, [filteredLogs, autoFollow, containerRef])
 
   return (
-    <div className="bg-white rounded-xl shadow p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
       <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-gray-900">Live Logs</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Live Logs</h2>
         <div className="flex gap-2 flex-wrap">
           {['firewall', 'system', 'backend'].map(t => (
             <button key={t} onClick={() => setLogType(t)}
-              className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${logType === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${logType === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:bg-gray-600'}`}>
               {t}
             </button>
           ))}
-          <button onClick={onRefresh} className="px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 hover:bg-gray-200">
+          <button onClick={onRefresh} className="px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:bg-gray-600">
             🔄
           </button>
         </div>
@@ -733,7 +733,7 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
       {/* Filters (only useful for firewall logs) */}
       {logType === 'firewall' && (
         <div className="flex flex-wrap gap-2 mb-3 items-center">
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
             {[['all', 'All'], ['pass', '✓ Pass'], ['block', '✕ Block']].map(([v, l]) => (
               <button key={v} onClick={() => setFilter({ ...filter, action: v })}
                 className={`px-3 py-1 rounded text-xs font-semibold transition ${
@@ -741,7 +741,7 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
                     ? v === 'pass' ? 'bg-green-600 text-white'
                     : v === 'block' ? 'bg-red-600 text-white'
                     : 'bg-indigo-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-200'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:bg-gray-600'
                 }`}>
                 {l}
               </button>
@@ -749,7 +749,7 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
           </div>
           {interfaces.length > 0 && (
             <select value={filter.iface} onChange={e => setFilter({ ...filter, iface: e.target.value })}
-              className="px-3 py-1 rounded-lg text-xs font-semibold bg-gray-100 border-0">
+              className="px-3 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 border-0">
               <option value="all">All interfaces</option>
               {interfaces.map(i => <option key={i} value={i}>{i}</option>)}
             </select>
@@ -757,8 +757,8 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
           <input type="text" placeholder="Search IP, port, protocol..."
             value={filter.search}
             onChange={e => setFilter({ ...filter, search: e.target.value })}
-            className="px-3 py-1 rounded-lg text-xs border bg-white flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-          <span className="text-xs text-gray-500">{filteredLogs.length}/{logs.length}</span>
+            className="px-3 py-1 rounded-lg text-xs border bg-white dark:bg-gray-800 flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+          <span className="text-xs text-gray-500 dark:text-gray-400">{filteredLogs.length}/{logs.length}</span>
         </div>
       )}
 
@@ -780,10 +780,13 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
       </div>
       {!autoFollow && (
         <button onClick={() => setAutoFollow(true)}
-          className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 font-semibold">
+          className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-semibold">
           ↓ Jump to latest
         </button>
       )}
     </div>
   )
 }
+
+
+

@@ -35,8 +35,8 @@ export default function Alerts() {
 
   const getSeverityColor = (severity) => {
     switch (severity) {
-      case 'critical': return 'bg-red-100 border-red-400 text-red-800'
-      case 'warning': return 'bg-yellow-100 border-yellow-400 text-yellow-800'
+      case 'critical': return 'bg-red-100 dark:bg-red-900/30 border-red-400 text-red-800 dark:text-red-200'
+      case 'warning': return 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 text-yellow-800 dark:text-yellow-200'
       default: return 'bg-blue-100 border-blue-400 text-blue-800'
     }
   }
@@ -52,12 +52,12 @@ export default function Alerts() {
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-4xl font-black text-gray-900">System Alerts</h1>
-        <p className="text-gray-600 mt-2">Active alerts and notifications ({alerts?.length || 0})</p>
+        <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">System Alerts</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">Active alerts and notifications ({alerts?.length || 0})</p>
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+        <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
           {error}
         </div>
       )}
@@ -84,7 +84,7 @@ export default function Alerts() {
                       loadAlerts()
                     } catch (e) { console.error(e) }
                   }}
-                  className="ml-4 px-4 py-2 bg-white rounded-lg hover:bg-gray-100 transition font-semibold text-sm"
+                  className="ml-4 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:bg-gray-700 transition font-semibold text-sm"
                 >
                   ✓ Resolve
                 </button>
@@ -93,11 +93,13 @@ export default function Alerts() {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-lg p-12 text-center">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-12 text-center">
           <div className="text-6xl mb-4">✓</div>
-          <p className="text-gray-500 text-lg">No active alerts - Everything looks good!</p>
+          <p className="text-gray-500 dark:text-gray-400 text-lg">No active alerts - Everything looks good!</p>
         </div>
       )}
     </div>
   )
 }
+
+

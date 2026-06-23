@@ -144,8 +144,8 @@ export default function Backups() {
       )}
 
       <div className="mb-8">
-        <h1 className="text-4xl font-black text-gray-900">Backups</h1>
-        <p className="text-gray-600 mt-2">Manage configuration backups per firewall</p>
+        <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">Backups</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">Manage configuration backups per firewall</p>
       </div>
 
       {loadingFw ? (
@@ -153,7 +153,7 @@ export default function Backups() {
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
         </div>
       ) : firewalls.length === 0 ? (
-        <div className="bg-white rounded-xl shadow p-12 text-center text-gray-500">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-12 text-center text-gray-500 dark:text-gray-400">
           No firewalls registered yet.
         </div>
       ) : (
@@ -163,7 +163,7 @@ export default function Backups() {
             <select
               value={selected || ''}
               onChange={e => setSelected(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 font-semibold"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 font-semibold"
             >
               {firewalls.map(fw => (
                 <option key={fw.id} value={fw.id}>{fw.customer_name} – {fw.ip}</option>
@@ -193,12 +193,12 @@ export default function Backups() {
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
             </div>
           ) : backups.length === 0 ? (
-            <div className="bg-white rounded-xl shadow p-12 text-center">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-12 text-center">
               <div className="text-5xl mb-4">💾</div>
-              <p className="text-gray-500 text-lg">No backups yet. Click &ldquo;Create Backup&rdquo; to start.</p>
+              <p className="text-gray-500 dark:text-gray-400 text-lg">No backups yet. Click &ldquo;Create Backup&rdquo; to start.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
               <table className="w-full">
                 <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
                   <tr>
@@ -209,17 +209,17 @@ export default function Backups() {
                     <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {backups.map(b => (
-                    <tr key={b.id} className="hover:bg-gray-50 transition">
-                      <td className="px-6 py-4 text-sm text-gray-700">{new Date(b.created_at).toLocaleString()}</td>
-                      <td className="px-6 py-4 text-xs font-mono text-gray-600">{b.filename}</td>
+                    <tr key={b.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
+                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{new Date(b.created_at).toLocaleString()}</td>
+                      <td className="px-6 py-4 text-xs font-mono text-gray-600 dark:text-gray-400">{b.filename}</td>
                       <td className="px-6 py-4 text-sm">{formatSize(b.size_bytes)}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                          b.triggered_by === 'pre-update' ? 'bg-yellow-100 text-yellow-800' :
+                          b.triggered_by === 'pre-update' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200' :
                           b.triggered_by === 'auto' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-600'}`}>
+                          'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
                           {b.triggered_by}
                         </span>
                       </td>
@@ -233,7 +233,7 @@ export default function Backups() {
                         <button
                           onClick={() => openRestoreDialog(b)}
                           disabled={restoring === b.id}
-                          className="text-indigo-600 hover:text-indigo-800 font-bold text-sm disabled:opacity-50"
+                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-bold text-sm disabled:opacity-50"
                         >
                           {restoring === b.id ? '...' : '↩ Restore'}
                         </button>
@@ -256,10 +256,10 @@ export default function Backups() {
       {/* Restore Modal */}
       {restoreTarget && (
         <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b">
-              <h3 className="text-2xl font-black text-gray-900">Restore Backup</h3>
-              <p className="text-sm text-gray-600 mt-1 font-mono break-all">{restoreTarget.filename}</p>
+              <h3 className="text-2xl font-black text-gray-900 dark:text-gray-100">Restore Backup</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 font-mono break-all">{restoreTarget.filename}</p>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex gap-3">
@@ -278,13 +278,13 @@ export default function Backups() {
               </div>
 
               {restoreMode === 'partial' && (
-                <div className="bg-gray-50 border rounded-lg p-4">
-                  <p className="text-xs text-gray-500 mb-3">
+                <div className="bg-gray-50 dark:bg-gray-900 border rounded-lg p-4">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                     Sections from the backup XML are merged into the current firewall configuration. Unchecked areas keep their current values.
                   </p>
                   <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
                     {AREA_OPTIONS.map(opt => (
-                      <label key={opt.id} className="flex items-center gap-2 text-sm hover:bg-white p-1 rounded cursor-pointer">
+                      <label key={opt.id} className="flex items-center gap-2 text-sm hover:bg-white dark:bg-gray-800 p-1 rounded cursor-pointer">
                         <input type="checkbox"
                           checked={restoreAreas.includes(opt.id)}
                           onChange={() => toggleArea(opt.id)} />
@@ -296,13 +296,13 @@ export default function Backups() {
                 </div>
               )}
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800">
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800 dark:text-yellow-200">
                 ⚠ The firewall may restart or briefly lose connectivity during restore.
               </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
               <button onClick={() => setRestoreTarget(null)}
-                className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 font-semibold">
+                className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:bg-gray-600 font-semibold">
                 Cancel
               </button>
               <button onClick={confirmRestore} disabled={restoring}
@@ -316,3 +316,6 @@ export default function Backups() {
     </div>
   )
 }
+
+
+
