@@ -95,56 +95,62 @@ class UpdateService:
 
             update_record.log = f"action={action}; response={update_response}"
 
-            # Poll for completion
-            max_wait = 3600  # 1 hour
+            # Poll for completion. If we don't see any upgrade-status activity
+            # shortly after starting, switch early to the other endpoint.
+            max_wait = 3600  # 1 hour final wait
             poll_interval = 10
-            elapsed = 0
+            initial_probe_wait = 30
+
+            async def _poll_until_done(wait_seconds: int, phase: str):
+                elapsed_local = 0
+                saw_activity = False
+
+                while elapsed_local < wait_seconds:
+                    await asyncio.sleep(poll_interval)
+                    elapsed_local += poll_interval
+
+                    try:
+                        st = await api_client.get_upgrade_status()
+                        st_value = str(st.get("status", "")).lower()
+                        if st_value and st_value not in ("none", "unknown"):
+                            saw_activity = True
+
+                        if st_value == "done":
+                            return True, saw_activity
+                        if st_value == "error":
+                            raise Exception(f"Update error ({phase}): {st.get('log', 'Unknown error')}")
+                    except Exception as e:
+                        logger.warning(f"Status check failed ({phase}): {e}")
+
+                return False, saw_activity
 
             completed = False
-            while elapsed < max_wait:
-                await asyncio.sleep(poll_interval)
-                elapsed += poll_interval
+            used_action = action
 
-                try:
-                    status = await api_client.get_upgrade_status()
-                    if status.get("status") == "done":
-                        logger.info(f"Update completed on {firewall.hostname}")
-                        completed = True
-                        break
-                    elif status.get("status") == "error":
-                        raise Exception(f"Update error: {status.get('log', 'Unknown error')}")
-                except Exception as e:
-                    logger.warning(f"Status check failed: {e}")
+            # Quick probe: if no status activity is visible, try fallback immediately.
+            completed, saw_activity = await _poll_until_done(initial_probe_wait, "initial")
 
-            # Fallback once: some installations require the other endpoint.
-            if not completed:
-                logger.warning(
-                    f"No completion detected for {firewall.hostname} after {max_wait}s, trying fallback action"
-                )
+            if not completed and not saw_activity:
                 fallback_action = "update" if action == "upgrade" else "upgrade"
+                logger.warning(
+                    f"No upgrade-status activity after {initial_probe_wait}s for {firewall.hostname}; trying fallback {fallback_action}"
+                )
                 try:
                     if fallback_action == "upgrade":
                         fallback_response = await api_client.upgrade_firmware()
                     else:
                         fallback_response = await api_client.install_updates()
-                    update_record.log = f"{update_record.log}; fallback_action={fallback_action}; fallback_response={fallback_response}"
+                    update_record.log = (
+                        f"{update_record.log}; fallback_action={fallback_action}; "
+                        f"fallback_response={fallback_response}"
+                    )
+                    used_action = fallback_action
                 except Exception as e:
                     logger.warning(f"Fallback {fallback_action} start failed on {firewall.hostname}: {e}")
+                    update_record.log = f"{update_record.log}; fallback_action={fallback_action}; fallback_error={e}"
 
-                elapsed = 0
-                while elapsed < max_wait:
-                    await asyncio.sleep(poll_interval)
-                    elapsed += poll_interval
-                    try:
-                        status = await api_client.get_upgrade_status()
-                        if status.get("status") == "done":
-                            logger.info(f"Update completed after fallback on {firewall.hostname}")
-                            completed = True
-                            break
-                        elif status.get("status") == "error":
-                            raise Exception(f"Update error after fallback: {status.get('log', 'Unknown error')}")
-                    except Exception as e:
-                        logger.warning(f"Status check after fallback failed: {e}")
+            if not completed:
+                completed, _ = await _poll_until_done(max_wait, f"final-{used_action}")
 
             if not completed:
                 raise Exception("Firmware job did not complete within timeout")
@@ -168,7 +174,10 @@ class UpdateService:
         except Exception as e:
             logger.error(f"Update failed for {firewall.hostname}: {e}")
             update_record.status = "failed"
-            update_record.log = str(e)
+            if update_record.log:
+                update_record.log = f"{update_record.log}; error={e}"
+            else:
+                update_record.log = str(e)
             update_record.completed_at = datetime.utcnow()
 
             # Send alert email
