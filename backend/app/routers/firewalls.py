@@ -461,7 +461,9 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
                     await asyncio.sleep(1)
 
             logger.debug(f"Live dashboard poll failed for {fw.hostname or fw.ip}: {last_error}")
-            return {"online": False, "cpu": None, "ram": None}
+            # Keep DB-derived online status on transient live poll errors to avoid
+            # one-refresh "offline" flicker for otherwise healthy firewalls.
+            return {"online": None, "cpu": None, "ram": None}
 
         return str(fw.id), await LIVE_CACHE.get_or_fetch(str(fw.id), lambda: bounded(_fetch))
 

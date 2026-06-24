@@ -38,8 +38,16 @@ def _load_scheduler_values(db: Session) -> dict:
         db.add(row)
         db.commit()
         db.refresh(row)
+
+    env_seconds = int(settings.MONITORING_INTERVAL_SECONDS or 0)
+    if env_seconds > 0:
+        monitoring_interval_seconds = max(5, env_seconds)
+    else:
+        legacy_minutes = int(row.monitoring_interval_minutes or settings.MONITORING_INTERVAL_MINUTES)
+        monitoring_interval_seconds = max(60, legacy_minutes * 60)
+
     return {
-        "monitoring_interval_minutes": max(1, int(row.monitoring_interval_minutes or settings.MONITORING_INTERVAL_MINUTES)),
+        "monitoring_interval_seconds": monitoring_interval_seconds,
         "license_check_hour": max(0, min(23, int(row.license_check_hour if row.license_check_hour is not None else settings.LICENSE_CHECK_HOUR))),
         "smart_check_hour": max(0, min(23, int(row.smart_check_hour if row.smart_check_hour is not None else settings.SMART_CHECK_HOUR))),
     }
@@ -329,7 +337,7 @@ def refresh_scheduler_jobs(scheduler: BlockingScheduler):
         scheduler.reschedule_job(
             "monitor_firewalls",
             trigger="interval",
-            minutes=cfg["monitoring_interval_minutes"],
+            seconds=cfg["monitoring_interval_seconds"],
         )
         scheduler.reschedule_job(
             "check_licenses",
@@ -363,7 +371,7 @@ def start_scheduler():
     scheduler.add_job(
         sync_job,
         'interval',
-        minutes=cfg["monitoring_interval_minutes"],
+        seconds=cfg["monitoring_interval_seconds"],
         args=[monitor_all_firewalls],
         id='monitor_firewalls',
         name='Monitor all firewalls'

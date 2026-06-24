@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     # Scheduling
     LICENSE_CHECK_HOUR: int = 2  # 2 AM daily
+    MONITORING_INTERVAL_SECONDS: int = 10
     MONITORING_INTERVAL_MINUTES: int = 5
     SMART_CHECK_HOUR: int = 3  # 3 AM daily
     UPDATE_CHECK_INTERVAL_MINUTES: int = 30
