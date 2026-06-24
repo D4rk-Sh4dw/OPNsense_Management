@@ -53,7 +53,8 @@ export default function FirewallDetail() {
         const res = await firewallsAPI.getLiveStats(id)
         if (!cancelled) setLiveStats(res.data)
       } catch {
-        if (!cancelled) setLiveStats(prev => prev ? { ...prev, online: false } : null)
+        // Keep the last known live state on transient polling failures.
+        if (!cancelled) setLiveStats(prev => prev)
       }
     }
     tick()

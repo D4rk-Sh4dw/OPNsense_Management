@@ -435,27 +435,35 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
 
     async def poll_one(fw: Firewall):
         async def _fetch():
-            try:
-                api_secret = EncryptionService.decrypt(fw.api_secret)
-                api = OPNsenseAPI(fw.ip, fw.api_key, api_secret, fw.verify_ssl, fw.ssl_cert_path)
-                # Override timeout to keep dashboard snappy even when one firewall is slow
-                api.timeout = 5
+            api_secret = EncryptionService.decrypt(fw.api_secret)
+            api = OPNsenseAPI(fw.ip, fw.api_key, api_secret, fw.verify_ssl, fw.ssl_cert_path)
+            # A slightly less aggressive timeout plus one retry avoids false
+            # offline states directly after reboot/update.
+            api.timeout = 8
 
-                # Mark online only if a dedicated connectivity endpoint succeeds.
-                await api.get_system_information()
+            last_error = None
+            for _ in range(2):
+                try:
+                    # Mark online only if a dedicated connectivity endpoint succeeds.
+                    await api.get_system_information()
 
-                resources, activity = await asyncio.gather(
-                    api.get_system_resources(),
-                    api.get_activity(),
-                    return_exceptions=True,
-                )
-                return {
-                    "online": True,
-                    "cpu": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
-                    "ram": _parse_memory(resources) if not isinstance(resources, Exception) else None,
-                }
-            except Exception:
-                return {"online": False, "cpu": None, "ram": None}
+                    resources, activity = await asyncio.gather(
+                        api.get_system_resources(),
+                        api.get_activity(),
+                        return_exceptions=True,
+                    )
+                    return {
+                        "online": True,
+                        "cpu": _parse_cpu_from_activity(activity) if not isinstance(activity, Exception) else None,
+                        "ram": _parse_memory(resources) if not isinstance(resources, Exception) else None,
+                    }
+                except Exception as e:
+                    last_error = e
+                    await asyncio.sleep(1)
+
+            logger.debug(f"Live dashboard poll failed for {fw.hostname or fw.ip}: {last_error}")
+            # Keep last known state from DB by not forcing offline on transient errors.
+            return {"online": None, "cpu": None, "ram": None}
 
         return str(fw.id), await LIVE_CACHE.get_or_fetch(str(fw.id), lambda: bounded(_fetch))
 
