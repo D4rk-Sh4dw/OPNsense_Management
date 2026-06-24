@@ -219,10 +219,18 @@ export default function GeoMap() {
                       </div>
                     )}
 
-                    <div style={{marginTop:'8px',borderTop:'1px solid #e5e7eb',paddingTop:'6px'}}>
+                    <div style={{marginTop:'8px',borderTop:'1px solid #e5e7eb',paddingTop:'6px',display:'flex',gap:'12px',alignItems:'center'}}>
                       <Link to={`/firewalls/${fw.id}`} className="text-indigo-600 text-xs font-semibold hover:underline">
                         → Details öffnen
                       </Link>
+                      <a
+                        href={`https://${fw.ip}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{color:'#6b7280',fontSize:'11px',fontWeight:'600'}}
+                      >
+                        🌐 WebGUI
+                      </a>
                     </div>
                   </div>
                 </Popup>

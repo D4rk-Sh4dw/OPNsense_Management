@@ -149,6 +149,7 @@ export default function Dashboard() {
                 <th className="px-6 py-4 text-left text-sm font-semibold">Firmware</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Updates</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Resources</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">GUI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -200,6 +201,17 @@ export default function Dashboard() {
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <a
+                        href={`https://${fw.ip}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-bold text-sm"
+                        title="WebGUI öffnen"
+                      >
+                        🌐
+                      </a>
                     </td>
                   </tr>
                 ))

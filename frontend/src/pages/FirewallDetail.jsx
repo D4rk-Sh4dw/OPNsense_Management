@@ -382,6 +382,15 @@ export default function FirewallDetail() {
             className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition disabled:opacity-50 font-semibold">
             {loadingReboot ? '...' : '⏻ Reboot'}
           </button>
+          <a
+            href={`https://${firewall.ip}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition font-semibold"
+            title="OPNsense WebGUI öffnen"
+          >
+            🌐 WebGUI
+          </a>
         </div>
       </div>
 

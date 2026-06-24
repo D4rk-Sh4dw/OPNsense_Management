@@ -318,6 +318,15 @@ export default function Firewalls() {
                       >
                         📊 Details
                       </Link>
+                      <a
+                        href={`https://${fw.ip}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-bold"
+                        title="WebGUI öffnen"
+                      >
+                        🌐 GUI
+                      </a>
                       {deleteConfirm === fw.id ? (
                         <span className="flex gap-2 items-center">
                           <button onClick={() => handleDelete(fw.id)} className="text-red-600 dark:text-red-400 font-bold hover:text-red-800 dark:text-red-200">Confirm</button>
