@@ -44,6 +44,7 @@ export default function Firewalls() {
         fw.ip,
         fw.license_type,
         fw.location_address,
+        ...(Array.isArray(fw.tags) ? fw.tags : []),
       ].filter(Boolean).join(' ').toLowerCase()
       return haystack.includes(q)
     })
@@ -394,7 +395,16 @@ export default function Firewalls() {
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredFirewalls.map((fw) => (
                   <tr key={fw.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
-                    <td className="px-6 py-4 font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</td>
+                    <td className="px-6 py-4">
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</span>
+                      {Array.isArray(fw.tags) && fw.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {fw.tags.map(t => (
+                            <span key={t} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-full">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || '—'}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400 font-mono text-sm">{fw.ip}</td>
                     <td className="px-6 py-4">

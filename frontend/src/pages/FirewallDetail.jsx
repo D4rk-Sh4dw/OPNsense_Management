@@ -409,6 +409,13 @@ export default function FirewallDetail() {
         <div className="flex-1">
           <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">{firewall.customer_name}</h1>
           <p className="text-gray-500 dark:text-gray-400">{firewall.hostname || firewall.ip}</p>
+          {Array.isArray(firewall.tags) && firewall.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {firewall.tags.map(t => (
+                <span key={t} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-full">{t}</span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex gap-3 flex-wrap">
           <label className="flex items-center gap-2 text-sm bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow cursor-pointer">
@@ -474,6 +481,7 @@ export default function FirewallDetail() {
             <Row label="Backup Schedule" value={formatBackupSchedule(firewall)} />
             <Row label="Auto Update" value={firewall.auto_update ? '✓ Enabled' : 'Disabled'} />
             <Row label="Auto Update Window" value={formatAutoUpdateWindow(firewall)} />
+            <Row label="Tags" value={Array.isArray(firewall.tags) && firewall.tags.length > 0 ? firewall.tags.join(', ') : '—'} />
             <Row label="Backup Retention" value={`${firewall.backup_retention} days`} />
             <Row label="Notify Email (Fallback)" value={firewall.notify_email || '—'} />
             <Row label="General Recipients" value={firewall.notify_emails_general || '—'} />
