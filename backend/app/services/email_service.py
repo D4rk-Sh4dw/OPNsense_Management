@@ -145,7 +145,8 @@ def _send_smtp(to_emails: list[str], subject: str, html: str, plain: str | None,
 
     def _attempt_send(from_addr: str) -> None:
         payload = _build_message(from_addr)
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        smtp_timeout = max(5, int(settings.REQUEST_TIMEOUT_SECONDS or 30))
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=smtp_timeout) as server:
             if settings.SMTP_USE_TLS:
                 server.starttls()
             if settings.SMTP_USER and settings.SMTP_PASSWORD:
