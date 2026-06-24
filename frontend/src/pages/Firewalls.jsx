@@ -64,6 +64,37 @@ export default function Firewalls() {
     setFormData({ ...formData, [name]: newValue })
   }
 
+  // Parse an OPNsense API key file (key=...\nsecret=...) and fill the form.
+  const handleApiKeyFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setFormError(null)
+    try {
+      const text = await file.text()
+      const parsed = {}
+      for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim()
+        if (!line || line.startsWith('#')) continue
+        const eq = line.indexOf('=')
+        if (eq <= 0) continue
+        const k = line.slice(0, eq).trim().toLowerCase()
+        const v = line.slice(eq + 1).trim()
+        if (k === 'key' || k === 'api_key') parsed.api_key = v
+        else if (k === 'secret' || k === 'api_secret') parsed.api_secret = v
+      }
+      if (!parsed.api_key && !parsed.api_secret) {
+        setFormError('Could not find key=/secret= in the selected file.')
+        return
+      }
+      setFormData((prev) => ({ ...prev, ...parsed }))
+    } catch (err) {
+      setFormError('Failed to read API key file: ' + (err?.message || err))
+    } finally {
+      // allow re-selecting the same file
+      e.target.value = ''
+    }
+  }
+
   const handleAddFirewall = async (e) => {
     e.preventDefault()
     setFormError(null)
@@ -165,6 +196,24 @@ export default function Firewalls() {
               </div>
               <Field label="API Key *" name="api_key" value={formData.api_key} onChange={handleInputChange} placeholder="API Key from OPNsense" required />
               <Field label="API Secret *" name="api_secret" value={formData.api_secret} onChange={handleInputChange} placeholder="API Secret from OPNsense" type="password" required />
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Import API Key File
+                </label>
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  onChange={handleApiKeyFile}
+                  className="block w-full text-sm text-gray-700 dark:text-gray-300
+                    file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-indigo-600 file:text-white hover:file:bg-indigo-700
+                    cursor-pointer"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Upload the .txt file from OPNsense (containing <code>key=...</code> and <code>secret=...</code>) to auto-fill the fields above.
+                </p>
+              </div>
             </div>
 
             {/* Section: Notifications */}
