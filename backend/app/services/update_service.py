@@ -122,33 +122,44 @@ class UpdateService:
             # Decide which firmware endpoint to use BEFORE triggering. OPNsense
             # exposes two distinct flows that must not be called together:
             #   * /core/firmware/update  → runs `pkg upgrade` for package updates
-            #   * /core/firmware/upgrade → major version transition (needs payload)
-            # /firmware/upgradestatus only reports the LAST job's status, so when
-            # we call both back-to-back the no-op `upgrade` (empty body on a
-            # minor-update firewall) finishes instantly, returns "done", and
-            # masks the real `pkg upgrade` that is still running underneath.
+            #   * /core/firmware/upgrade → package or release upgrade (needs body)
+            # /firmware/upgradestatus only reports the LAST job's status, so
+            # calling both back-to-back makes the second one mask the first.
+            # We pick exactly one based on the top-level "status" field:
+            #   status="update"  → /firmware/update with upgrade=all
+            #   status="upgrade" → /firmware/upgrade with target from status_upgrade_action
             top_status = ""
+            status_upgrade_action = ""
+            product_version = ""
+            product_latest = ""
             if isinstance(status_before, dict):
                 top_status = str(status_before.get("status", "")).lower()
+                status_upgrade_action = str(status_before.get("status_upgrade_action", "")).lower()
+                product_version = str(status_before.get("product_version", "")).strip()
+                product_latest = str(status_before.get("product_latest", "")).strip()
+
             use_upgrade = top_status in ("upgrade", "release_update")
 
-            # Determine upgrade target for /firmware/upgrade. Order of
-            # preference: product_latest from status (e.g. "25.7"), then
-            # status_upgrade_action, finally fall back to "pkg" which performs
-            # a package-only upgrade. Sending an empty body has been observed
-            # to be a no-op on some OPNsense installs.
-            upgrade_target = "pkg"
-            if isinstance(status_before, dict):
-                for key in ("product_latest", "status_upgrade_action", "upgrade_major_version", "upgrade_version"):
-                    val = status_before.get(key)
-                    if isinstance(val, str) and val.strip() and val.strip().lower() not in ("none", "ok"):
-                        upgrade_target = val.strip()
-                        break
+            # Determine the value to send as `upgrade=<target>` to /firmware/upgrade:
+            #   * status_upgrade_action="pkg" → package-only upgrade (same version)
+            #   * status_upgrade_action="rel"/"all" → release upgrade to product_latest
+            #   * otherwise → derive from product_latest, fall back to "pkg"
+            if status_upgrade_action == "pkg":
+                upgrade_target = "pkg"
+            elif status_upgrade_action in ("rel", "all", "maj", "min") and product_latest:
+                upgrade_target = product_latest
+            elif product_latest and product_latest != product_version:
+                upgrade_target = product_latest
+            else:
+                upgrade_target = "pkg"
 
             # Trigger the selected endpoint.
             logger.info(
                 f"Triggering firmware/{'upgrade' if use_upgrade else 'update'} on "
                 f"{firewall.hostname} (top_status={top_status or 'unknown'}, "
+                f"status_upgrade_action={status_upgrade_action or 'none'}, "
+                f"product_version={product_version or 'unknown'}, "
+                f"product_latest={product_latest or 'unknown'}, "
                 f"upgrade_target={upgrade_target})"
             )
             triggered = []
@@ -188,6 +199,9 @@ class UpdateService:
             update_record.log = (
                 f"action={action}; "
                 f"top_status={top_status or 'unknown'}; "
+                f"status_upgrade_action={status_upgrade_action or 'none'}; "
+                f"product_version={product_version or 'unknown'}; "
+                f"product_latest={product_latest or 'unknown'}; "
                 f"upgrade_target={upgrade_target}; "
                 f"update_response={update_response}; "
                 f"upgrade_response={upgrade_response}; "
