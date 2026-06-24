@@ -417,13 +417,30 @@ class OPNsenseAPI:
         """POST /api/core/firmware/check"""
         return await self._request("POST", "/core/firmware/check", json={})
 
-    async def install_updates(self) -> Dict[str, Any]:
-        """POST /api/core/firmware/update"""
-        return await self._request("POST", "/core/firmware/update", json={})
+    async def install_updates(self, target: str = "all") -> Dict[str, Any]:
+        """POST /api/core/firmware/update.
 
-    async def upgrade_firmware(self) -> Dict[str, Any]:
-        """POST /api/core/firmware/upgrade (major release upgrade path)."""
-        return await self._request("POST", "/core/firmware/upgrade", json={})
+        OPNsense's PHP backend reads POST parameters via getPost() (form-encoded),
+        so we send form data, not JSON. An empty body has been observed to be
+        ignored on some installs, leaving the request as a no-op. The "upgrade"
+        parameter is accepted by both /update and /upgrade endpoints.
+        """
+        return await self._request("POST", "/core/firmware/update", data={"upgrade": target})
+
+    async def upgrade_firmware(self, target: str = "pkg") -> Dict[str, Any]:
+        """POST /api/core/firmware/upgrade.
+
+        target values:
+          * "pkg"             - package-only upgrade (safe default; does what
+                                the "Update" button in the GUI does for plain
+                                package upgrades)
+          * "<release label>" - major release upgrade (e.g. "25.7" or whatever
+                                product_latest from firmware/status reports)
+
+        OPNsense expects form-encoded data here (Phalcon getPost()). An empty
+        body falls into a default branch that does not perform a real upgrade.
+        """
+        return await self._request("POST", "/core/firmware/upgrade", data={"upgrade": target})
 
     async def get_upgrade_status(self) -> Dict[str, Any]:
         """GET /api/core/firmware/upgradestatus"""

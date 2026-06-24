@@ -132,10 +132,24 @@ class UpdateService:
                 top_status = str(status_before.get("status", "")).lower()
             use_upgrade = top_status in ("upgrade", "release_update")
 
+            # Determine upgrade target for /firmware/upgrade. Order of
+            # preference: product_latest from status (e.g. "25.7"), then
+            # status_upgrade_action, finally fall back to "pkg" which performs
+            # a package-only upgrade. Sending an empty body has been observed
+            # to be a no-op on some OPNsense installs.
+            upgrade_target = "pkg"
+            if isinstance(status_before, dict):
+                for key in ("product_latest", "status_upgrade_action", "upgrade_major_version", "upgrade_version"):
+                    val = status_before.get(key)
+                    if isinstance(val, str) and val.strip() and val.strip().lower() not in ("none", "ok"):
+                        upgrade_target = val.strip()
+                        break
+
             # Trigger the selected endpoint.
             logger.info(
                 f"Triggering firmware/{'upgrade' if use_upgrade else 'update'} on "
-                f"{firewall.hostname} (top_status={top_status or 'unknown'})"
+                f"{firewall.hostname} (top_status={top_status or 'unknown'}, "
+                f"upgrade_target={upgrade_target})"
             )
             triggered = []
             update_response = None
@@ -143,7 +157,7 @@ class UpdateService:
 
             if use_upgrade:
                 try:
-                    upgrade_response = await api_client.upgrade_firmware()
+                    upgrade_response = await api_client.upgrade_firmware(target=upgrade_target)
                     triggered.append("upgrade")
                     logger.info(f"firmware/upgrade response on {firewall.hostname}: {upgrade_response}")
                 except Exception as e:
@@ -174,6 +188,7 @@ class UpdateService:
             update_record.log = (
                 f"action={action}; "
                 f"top_status={top_status or 'unknown'}; "
+                f"upgrade_target={upgrade_target}; "
                 f"update_response={update_response}; "
                 f"upgrade_response={upgrade_response}; "
                 f"pre_status={pre_status_value or 'none'}; "
