@@ -371,6 +371,30 @@ class OPNsenseAPI:
         """GET /api/core/firmware/info - richer payload incl. subscription on Business."""
         return await self._request("GET", "/core/firmware/info")
 
+    async def get_firmware_config(self) -> Dict[str, Any]:
+        """GET /api/core/firmware/get - read firmware settings (mirror, subscription, etc.)."""
+        return await self._request("GET", "/core/firmware/get")
+
+    async def set_firmware_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/core/firmware/set - write firmware settings."""
+        return await self._request("POST", "/core/firmware/set", json=config)
+
+    async def update_subscription_key(self, subscription_key: str) -> Dict[str, Any]:
+        """Update OPNsense Business subscription key via firmware config set endpoint."""
+        current = await self.get_firmware_config()
+        firmware = current.get("firmware") if isinstance(current, dict) else None
+        if not isinstance(firmware, dict):
+            firmware = {}
+
+        firmware["subscription"] = subscription_key.strip()
+
+        # Keep type as business when setting a Business subscription key.
+        if not firmware.get("type"):
+            firmware["type"] = "business"
+
+        payload = {"firmware": firmware}
+        return await self.set_firmware_config(payload)
+
     async def get_business_license(self) -> Dict[str, Any]:
         """Try Business-edition license endpoints with fallbacks; returns {} if unavailable."""
         candidates = [

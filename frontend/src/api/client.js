@@ -35,6 +35,8 @@ export const firewallsAPI = {
   reboot: (id) => api.post(`/firewalls/${id}/reboot`),
   updateApiSecret: (id, apiSecret) =>
     api.post(`/firewalls/${id}/update-api-secret`, { api_secret: apiSecret }),
+  updateSubscriptionKey: (id, subscriptionKey) =>
+    api.post(`/firewalls/${id}/subscription-key`, { subscription_key: subscriptionKey }),
 }
 
 // Monitoring API

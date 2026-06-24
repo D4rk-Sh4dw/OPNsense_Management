@@ -11,6 +11,7 @@ export default function FirewallDetail() {
   const [loading, setLoading] = useState(true)
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [loadingLicense, setLoadingLicense] = useState(false)
+  const [loadingSubscription, setLoadingSubscription] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [loadingServices, setLoadingServices] = useState(false)
   const [serviceAction, setServiceAction] = useState(null)
@@ -26,6 +27,7 @@ export default function FirewallDetail() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
+  const [subscriptionKey, setSubscriptionKey] = useState('')
 
   // Log filtering & scroll handling
   const [logFilter, setLogFilter] = useState({ action: 'all', iface: 'all', search: '' })
@@ -209,6 +211,27 @@ export default function FirewallDetail() {
       showToast('Could not fetch license from firewall', false)
     } finally {
       setLoadingLicense(false)
+    }
+  }
+
+  const handleUpdateSubscriptionKey = async () => {
+    const key = (subscriptionKey || '').trim()
+    if (!key) {
+      showToast('Please enter a subscription key first', false)
+      return
+    }
+
+    setLoadingSubscription(true)
+    try {
+      await firewallsAPI.updateSubscriptionKey(id, key)
+      showToast('Subscription key updated on firewall')
+      setSubscriptionKey('')
+      await handleFetchLicense()
+      await loadAll()
+    } catch (e) {
+      showToast('Could not update subscription key: ' + (e.response?.data?.detail || e.message), false)
+    } finally {
+      setLoadingSubscription(false)
     }
   }
 
@@ -450,6 +473,23 @@ export default function FirewallDetail() {
             <button onClick={handleFetchLicense} disabled={loadingLicense}
               className="text-sm bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-200 transition disabled:opacity-50 font-semibold">
               {loadingLicense ? '...' : '🔍 Fetch from Firewall'}
+            </button>
+          </div>
+          <div className="mb-4 grid md:grid-cols-[1fr_auto] gap-2">
+            <input
+              type="password"
+              value={subscriptionKey}
+              onChange={e => setSubscriptionKey(e.target.value)}
+              placeholder="OPNsense subscription key"
+              className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+              autoComplete="off"
+            />
+            <button
+              onClick={handleUpdateSubscriptionKey}
+              disabled={loadingSubscription || !subscriptionKey.trim()}
+              className="bg-amber-500 text-white px-3 py-2 rounded-lg hover:bg-amber-600 transition disabled:opacity-50 font-semibold"
+            >
+              {loadingSubscription ? '...' : 'Save Key'}
             </button>
           </div>
           <dl className="space-y-3 text-sm">

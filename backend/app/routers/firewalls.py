@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Firewall, FirewallStatus, Alert
@@ -23,6 +24,10 @@ from app.services.opnsense_api import OPNsenseAPI, extract_license_type, extract
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
+
+
+class SubscriptionKeyUpdateRequest(BaseModel):
+    subscription_key: str = Field(..., min_length=8, max_length=128)
 
 
 async def _geocode_address(address: str) -> Optional[Dict[str, Any]]:
@@ -458,6 +463,40 @@ async def fetch_license_from_firewall(
         }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
+
+
+@router.post("/{firewall_id}/subscription-key")
+async def update_subscription_key(
+    firewall_id: str,
+    payload: SubscriptionKeyUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """Update OPNsense Business subscription key via firmware config API."""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    key = payload.subscription_key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="subscription_key must not be empty")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path
+        )
+
+        result = await api.update_subscription_key(key)
+
+        return {
+            "ok": True,
+            "firewall_id": firewall_id,
+            "message": "Subscription key updated on firewall",
+            "result": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not update subscription key: {e}")
 
 
 @router.get("/{firewall_id}/logs")
