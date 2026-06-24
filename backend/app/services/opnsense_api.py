@@ -45,16 +45,12 @@ def extract_firmware_update_count(status: Dict[str, Any]) -> int:
     version comparison, top-level "status" hint) and returns the maximum so an
     empty `upgrade_packages` array does not mask a non-empty `upgrade_sets`.
 
-    A top-level "status" of "none" is treated as a definitive "no updates" and
-    short-circuits all other heuristics — OPNsense reports this when the last
-    firmware/check found nothing pending, regardless of revision suffixes
-    (e.g. product_version="25.10.2_12" vs product_latest="25.10.2" only differ
-    by package iteration, not by a real upgrade).
+    Evaluation order matters: concrete evidence (upgrade_sets, upgrade_packages,
+    upgrade_major_version) is checked FIRST. Only when no such evidence exists
+    do we treat status="none" / "up to date" status_msg as definitive zero —
+    otherwise a stale top-level `status="none"` from /firmware/status would
+    mask a real major upgrade exposed via /firmware/info → product.product_check.
     """
-    top_status_raw = status.get("status")
-    if isinstance(top_status_raw, str) and top_status_raw.strip().lower() == "none":
-        return 0
-
     candidates = [
         status.get("updates"),
         status.get("update_count"),
@@ -101,32 +97,43 @@ def extract_firmware_update_count(status: Dict[str, Any]) -> int:
 
     status_msg = status.get("status_msg")
     if isinstance(status_msg, str):
-        # Explicit "up to date" wording overrides everything.
-        msg_lower = status_msg.lower()
-        if any(phrase in msg_lower for phrase in ("up to date", "up-to-date", "no updates", "no update available")):
-            return 0
-        m = re.search(r"(\d+)\s+update", msg_lower)
+        m = re.search(r"(\d+)\s+update", status_msg.lower())
         if m:
             best = max(best, int(m.group(1)))
 
-    # Top-level "status" of "upgrade" / "update" is a definitive >=1 signal on
-    # OPNsense Business when packages lists arrive empty.
+    # Top-level "status" of "upgrade" / "update" is a definitive >=1 signal.
     top_status = status.get("status")
     if isinstance(top_status, str) and top_status.lower() in ("upgrade", "update", "pending"):
         best = max(best, 1)
 
-    if best == 0:
-        current_version = extract_firmware_version(status)
-        latest_version = extract_latest_firmware_version(status)
-        if current_version and latest_version:
-            # Strip OPNsense package-revision suffix (e.g. "_12") so
-            # "25.10.2_12" and "25.10.2" are considered the same release.
-            cur_norm = re.sub(r"_\d+$", "", current_version)
-            lat_norm = re.sub(r"_\d+$", "", latest_version)
-            if cur_norm != lat_norm:
-                best = 1
+    # A pending major release upgrade (e.g. 25.10 -> 26.4) is definitive >=1
+    # even if upgrade_packages is empty.
+    if status.get("upgrade_major_version") not in (None, "", "none"):
+        best = max(best, 1)
 
-    return max(0, best)
+    if best > 0:
+        return best
+
+    # Only now treat "no updates" markers as definitive. Earlier short-circuits
+    # would mask major upgrades exposed via /firmware/info merging.
+    if isinstance(top_status, str) and top_status.strip().lower() == "none":
+        return 0
+    if isinstance(status_msg, str):
+        msg_lower = status_msg.lower()
+        if any(phrase in msg_lower for phrase in ("up to date", "up-to-date", "no updates", "no update available")):
+            return 0
+
+    # Version comparison fallback. Strip OPNsense package-revision suffix
+    # (e.g. "_12") so "25.10.2_12" and "25.10.2" are considered the same.
+    current_version = extract_firmware_version(status)
+    latest_version = extract_latest_firmware_version(status)
+    if current_version and latest_version:
+        cur_norm = re.sub(r"_\d+$", "", current_version)
+        lat_norm = re.sub(r"_\d+$", "", latest_version)
+        if cur_norm != lat_norm:
+            return 1
+
+    return 0
 
 
 def extract_firmware_version(status: Dict[str, Any]) -> Optional[str]:

@@ -121,35 +121,46 @@ class UpdateService:
             # upgrades, /firmware/status often returns status='none' even
             # when a major release (e.g. 26.x) is available, because that
             # info lives in /firmware/info (with fields like upgrade_major_*).
-            # Merge non-empty info fields into status_before so the target
-            # selector can see them.
+            # On real-world OPNsense Business payloads the relevant data is
+            # nested two levels deep under product.product_check, NOT at the
+            # top level — so we extract that sub-dict and merge from there.
             firmware_info: dict = {}
+            product_check: dict = {}
             try:
                 firmware_info = await api_client.get_firmware_info() or {}
                 if isinstance(firmware_info, dict):
+                    product = firmware_info.get("product")
+                    if isinstance(product, dict):
+                        pc = product.get("product_check")
+                        if isinstance(pc, dict):
+                            product_check = pc
                     try:
                         logger.info(
                             f"firmware/info payload for {firewall.hostname}: "
                             f"top_level_keys={sorted(firmware_info.keys())}; "
-                            f"raw_status={firmware_info.get('status')!r}; "
-                            f"raw_status_msg={firmware_info.get('status_msg')!r}; "
-                            f"raw_status_upgrade_action={firmware_info.get('status_upgrade_action')!r}; "
-                            f"raw_product_version={firmware_info.get('product_version')!r}; "
-                            f"raw_product_latest={firmware_info.get('product_latest')!r}; "
-                            f"raw_upgrade_major_version={firmware_info.get('upgrade_major_version')!r}; "
-                            f"raw_upgrade_major_message={firmware_info.get('upgrade_major_message')!r}; "
-                            f"raw_upgrade_packages_type={type(firmware_info.get('upgrade_packages')).__name__}; "
-                            f"raw_upgrade_sets_type={type(firmware_info.get('upgrade_sets')).__name__}"
+                            f"product_check_present={bool(product_check)}; "
+                            f"product_check_keys={sorted(product_check.keys()) if product_check else 'n/a'}; "
+                            f"pc_raw_status_upgrade_action={product_check.get('status_upgrade_action')!r}; "
+                            f"pc_raw_product_version={product_check.get('product_version')!r}; "
+                            f"pc_raw_product_target={product_check.get('product_target')!r}; "
+                            f"pc_raw_upgrade_major_version={product_check.get('upgrade_major_version')!r}; "
+                            f"pc_raw_upgrade_needs_reboot={product_check.get('upgrade_needs_reboot')!r}; "
+                            f"pc_raw_upgrade_packages_type={type(product_check.get('upgrade_packages')).__name__}; "
+                            f"pc_raw_upgrade_packages_len={len(product_check.get('upgrade_packages')) if isinstance(product_check.get('upgrade_packages'), list) else 'n/a'}; "
+                            f"pc_raw_upgrade_sets_type={type(product_check.get('upgrade_sets')).__name__}; "
+                            f"pc_raw_upgrade_sets_len={len(product_check.get('upgrade_sets')) if isinstance(product_check.get('upgrade_sets'), list) else 'n/a'}"
                         )
                     except Exception:
                         pass
-                    if isinstance(status_before, dict):
-                        for k, v in firmware_info.items():
+                    # Merge product_check into status_before so downstream
+                    # logic sees the full upgrade picture. Only fill empty /
+                    # placeholder values to avoid clobbering data already
+                    # set by /firmware/status.
+                    if product_check and isinstance(status_before, dict):
+                        for k, v in product_check.items():
                             existing = status_before.get(k)
                             if existing in (None, "", "none") and v not in (None, "", "none"):
                                 status_before[k] = v
-                    else:
-                        status_before = firmware_info
             except Exception as e:
                 logger.warning(f"firmware/info failed for {firewall.hostname}: {e}")
 
@@ -257,7 +268,14 @@ class UpdateService:
                 if not product_latest:
                     product_latest = extract_latest_firmware_version(status_before) or ""
 
-            use_upgrade = top_status in ("upgrade", "release_update")
+            # Use /firmware/upgrade when either the firewall explicitly signals
+            # an upgrade is needed OR we detected a pending major release via
+            # /firmware/info (upgrade_major_version / non-empty upgrade_sets).
+            use_upgrade = (
+                top_status in ("upgrade", "release_update")
+                or bool(upgrade_major_version)
+                or upgrade_sets_count > 0
+            )
 
             # Determine the value to send as `upgrade=<target>` to /firmware/upgrade.
             # Priority order, based on actual OPNsense /firmware/status payloads:
