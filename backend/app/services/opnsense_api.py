@@ -39,12 +39,21 @@ def _extract_version(status: Dict[str, Any], keys: list[str]) -> Optional[str]:
 
 
 def extract_firmware_update_count(status: Dict[str, Any]) -> int:
-    """Best-effort update count parser for different OPNsense firmware payload shapes."""
+    """Best-effort update count parser for different OPNsense firmware payload shapes.
+
+    Aggregates all signals (counters, package lists, upgrade sets, status_msg,
+    version comparison, top-level "status" hint) and returns the maximum so an
+    empty `upgrade_packages` array does not mask a non-empty `upgrade_sets`.
+    """
     candidates = [
         status.get("updates"),
         status.get("update_count"),
         status.get("updates_count"),
         status.get("upgrade_packages"),
+        status.get("upgrade_sets"),
+        status.get("all_sets"),
+        status.get("new_packages"),
+        status.get("reinstall_packages"),
         status.get("packages"),
         status.get("all_packages"),
     ]
@@ -74,25 +83,31 @@ def extract_firmware_update_count(status: Dict[str, Any]) -> int:
             for key in ("rows", "packages", "items"):
                 if isinstance(v.get(key), list):
                     return len(v.get(key))
+            return len(v)
         return None
 
-    for value in candidates:
-        parsed = _parse(value)
-        if parsed is not None:
-            return max(0, parsed)
+    parsed_counts = [p for p in (_parse(v) for v in candidates) if p is not None]
+    best = max(parsed_counts) if parsed_counts else 0
 
     status_msg = status.get("status_msg")
     if isinstance(status_msg, str):
         m = re.search(r"(\d+)\s+update", status_msg.lower())
         if m:
-            return int(m.group(1))
+            best = max(best, int(m.group(1)))
 
-    current_version = extract_firmware_version(status)
-    latest_version = extract_latest_firmware_version(status)
-    if current_version and latest_version and current_version != latest_version:
-        return 1
+    # Top-level "status" of "upgrade" / "update" is a definitive >=1 signal on
+    # OPNsense Business when packages lists arrive empty.
+    top_status = status.get("status")
+    if isinstance(top_status, str) and top_status.lower() in ("upgrade", "update", "pending"):
+        best = max(best, 1)
 
-    return 0
+    if best == 0:
+        current_version = extract_firmware_version(status)
+        latest_version = extract_latest_firmware_version(status)
+        if current_version and latest_version and current_version != latest_version:
+            best = 1
+
+    return max(0, best)
 
 
 def extract_firmware_version(status: Dict[str, Any]) -> Optional[str]:
