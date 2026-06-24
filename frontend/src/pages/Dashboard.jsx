@@ -110,6 +110,7 @@ export default function Dashboard() {
       fw.ip,
       fw.firmware_version,
       fw.online ? 'online' : 'offline',
+      ...(Array.isArray(fw.tags) ? fw.tags : []),
     ].filter(Boolean).join(' ').toLowerCase()
     return haystack.includes(q)
   })
@@ -297,7 +298,7 @@ export default function Dashboard() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search customer, hostname, IP, status or firmware..."
+            placeholder="Search customer, tags, hostname, IP, status or firmware..."
             className="w-full md:w-[26rem] px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white dark:bg-gray-800"
           />
         </div>
@@ -339,7 +340,16 @@ export default function Dashboard() {
                         title={(fw.updates_available || 0) > 0 ? 'Select for bulk update' : 'No updates available'}
                       />
                     </td>
-                    <td className="px-6 py-4 font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</td>
+                    <td className="px-6 py-4">
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</span>
+                      {Array.isArray(fw.tags) && fw.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {fw.tags.map(t => (
+                            <span key={t} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-full">{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || 'N/A'}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400 font-mono text-sm">{fw.ip}</td>
                     <td className="px-6 py-4">

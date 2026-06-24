@@ -598,6 +598,7 @@ class MonitoringService:
                 "customer_name": fw.customer_name,
                 "hostname": fw.hostname,
                 "ip": fw.ip,
+                "tags": fw.tags or [],
                 "online": status.online if status else None,
                 "firmware_version": status.firmware_version if status else None,
                 "updates_available": status.updates_available if status else 0,

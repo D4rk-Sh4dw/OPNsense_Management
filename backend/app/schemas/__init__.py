@@ -222,6 +222,7 @@ class FirewallQuickStatus(BaseModel):
     customer_name: str
     hostname: Optional[str] = None
     ip: str
+    tags: Optional[List[str]] = []
     online: Optional[bool] = None
     firmware_version: Optional[str] = None
     updates_available: int = 0
