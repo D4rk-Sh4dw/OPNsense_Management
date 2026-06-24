@@ -127,28 +127,45 @@ class UpdateService:
             # calling both back-to-back makes the second one mask the first.
             # We pick exactly one based on the top-level "status" field:
             #   status="update"  → /firmware/update with upgrade=all
-            #   status="upgrade" → /firmware/upgrade with target from status_upgrade_action
+            #   status="upgrade" → /firmware/upgrade with the right target
             top_status = ""
             status_upgrade_action = ""
             product_version = ""
             product_latest = ""
+            upgrade_major_version = ""
+            upgrade_packages_count = 0
+            upgrade_sets_count = 0
             if isinstance(status_before, dict):
                 top_status = str(status_before.get("status", "")).lower()
                 status_upgrade_action = str(status_before.get("status_upgrade_action", "")).lower()
                 product_version = str(status_before.get("product_version", "")).strip()
                 product_latest = str(status_before.get("product_latest", "")).strip()
+                upgrade_major_version = str(status_before.get("upgrade_major_version", "")).strip()
+                up_packages = status_before.get("upgrade_packages")
+                up_sets = status_before.get("upgrade_sets")
+                if isinstance(up_packages, list):
+                    upgrade_packages_count = len(up_packages)
+                if isinstance(up_sets, list):
+                    upgrade_sets_count = len(up_sets)
 
             use_upgrade = top_status in ("upgrade", "release_update")
 
-            # Determine the value to send as `upgrade=<target>` to /firmware/upgrade:
-            #   * status_upgrade_action="pkg" → package-only upgrade (same version)
-            #   * status_upgrade_action="rel"/"all" → release upgrade to product_latest
-            #   * otherwise → derive from product_latest, fall back to "pkg"
-            if status_upgrade_action == "pkg":
+            # Determine the value to send as `upgrade=<target>` to /firmware/upgrade.
+            # Priority order, based on actual OPNsense /firmware/status payloads:
+            #   1. upgrade_major_version (e.g. "26.4") → major release upgrade.
+            #      This is the SOLE reliable signal for a major version jump and
+            #      MUST take precedence — product_latest only reports the latest
+            #      in the current series, not the upgrade target.
+            #   2. status_upgrade_action="pkg" → explicit package-only upgrade.
+            #   3. status_upgrade_action in {rel,all,maj,min} with product_latest
+            #      → release upgrade to product_latest.
+            #   4. Fallback to "pkg" (covers patch updates that still go through
+            #      /firmware/upgrade because of status="upgrade").
+            if upgrade_major_version:
+                upgrade_target = upgrade_major_version
+            elif status_upgrade_action == "pkg":
                 upgrade_target = "pkg"
             elif status_upgrade_action in ("rel", "all", "maj", "min") and product_latest:
-                upgrade_target = product_latest
-            elif product_latest and product_latest != product_version:
                 upgrade_target = product_latest
             else:
                 upgrade_target = "pkg"
@@ -160,6 +177,9 @@ class UpdateService:
                 f"status_upgrade_action={status_upgrade_action or 'none'}, "
                 f"product_version={product_version or 'unknown'}, "
                 f"product_latest={product_latest or 'unknown'}, "
+                f"upgrade_major_version={upgrade_major_version or 'none'}, "
+                f"upgrade_packages={upgrade_packages_count}, "
+                f"upgrade_sets={upgrade_sets_count}, "
                 f"upgrade_target={upgrade_target})"
             )
             triggered = []
@@ -202,6 +222,9 @@ class UpdateService:
                 f"status_upgrade_action={status_upgrade_action or 'none'}; "
                 f"product_version={product_version or 'unknown'}; "
                 f"product_latest={product_latest or 'unknown'}; "
+                f"upgrade_major_version={upgrade_major_version or 'none'}; "
+                f"upgrade_packages={upgrade_packages_count}; "
+                f"upgrade_sets={upgrade_sets_count}; "
                 f"upgrade_target={upgrade_target}; "
                 f"update_response={update_response}; "
                 f"upgrade_response={upgrade_response}; "
