@@ -154,9 +154,39 @@ def raise_alert(
 def resolve_alert_if_open(db: Session, firewall_id, alert_type: str):
     open_alert = _open_alert(db, firewall_id, alert_type)
     if open_alert:
+        firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
         open_alert.resolved = True
         open_alert.resolved_at = datetime.utcnow()
         db.commit()
+
+        # Send one "resolved" notification corresponding to the original alert.
+        if firewall is not None:
+            recipients = resolve_firewall_recipients(firewall, "general")
+            if recipients:
+                title_map = {
+                    "offline": "Firewall wieder online",
+                    "gateway_offline": "Gateway wieder online",
+                    "high_cpu": "CPU-Auslastung wieder normal",
+                    "high_ram": "RAM-Auslastung wieder normal",
+                    "updates_pending": "Update-Status wieder normal",
+                    "smart_error": "S.M.A.R.T.-Status wieder normal",
+                }
+                title = title_map.get(alert_type, f"Alert behoben: {alert_type}")
+                details = (
+                    f"Der Alert '{alert_type}' wurde als behoben markiert. "
+                    f"Vorherige Meldung: {open_alert.message}"
+                )
+                try:
+                    EmailService.send_generic_alert(
+                        customer_name=firewall.customer_name,
+                        hostname=firewall.hostname or firewall.ip,
+                        notify_email=recipients,
+                        severity="info",
+                        title=title,
+                        details=details,
+                    )
+                except Exception as e:
+                    logger.warning(f"Resolved alert email failed for {firewall.hostname}: {e}")
 
 
 def _gateway_problems(gw_status: dict) -> list:
