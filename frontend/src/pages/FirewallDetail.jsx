@@ -33,6 +33,7 @@ export default function FirewallDetail() {
   const [logFilter, setLogFilter] = useState({ action: 'all', iface: 'all', search: '' })
   const logContainerRef = useRef(null)
   const [autoFollowLogs, setAutoFollowLogs] = useState(true)
+  const liveFailCountRef = useRef(0)
 
   useEffect(() => {
     loadAll()
@@ -51,10 +52,14 @@ export default function FirewallDetail() {
       if (document.hidden) return
       try {
         const res = await firewallsAPI.getLiveStats(id)
+        liveFailCountRef.current = 0
         if (!cancelled) setLiveStats(res.data)
       } catch {
-        // Keep the last known live state on transient polling failures.
-        if (!cancelled) setLiveStats(prev => prev)
+        liveFailCountRef.current += 1
+        // Avoid one-shot flapping, but mark offline when failures persist.
+        if (!cancelled && liveFailCountRef.current >= 3) {
+          setLiveStats(prev => prev ? { ...prev, online: false } : { online: false })
+        }
       }
     }
     tick()

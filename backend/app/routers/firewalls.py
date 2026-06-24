@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 import httpx
@@ -429,6 +430,10 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
     import asyncio
     from app.services.monitoring_service import _parse_memory, _parse_cpu_from_activity
     from app.services.live_cache import DASHBOARD_CACHE, LIVE_CACHE, bounded
+    from app.config import get_settings
+
+    settings = get_settings()
+    stale_after = timedelta(minutes=max(2, int(settings.MONITORING_INTERVAL_MINUTES or 5) * 2))
 
     base = MonitoringService.get_firewall_quick_status(db)
     firewalls = db.query(Firewall).all()
@@ -483,6 +488,12 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
             item["ram_usage"] = data["ram"]
         if data["online"] is not None:
             item["online"] = data["online"]
+        elif item.get("online") is True:
+            # If live probing repeatedly fails and the last confirmed online
+            # heartbeat is stale, treat firewall as offline.
+            last_seen = item.get("last_seen")
+            if isinstance(last_seen, datetime) and (datetime.utcnow() - last_seen) > stale_after:
+                item["online"] = False
     return base
 
 
