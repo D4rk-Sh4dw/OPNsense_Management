@@ -158,18 +158,59 @@ class UpdateService:
             upgrade_major_version = ""
             upgrade_packages_count = 0
             upgrade_sets_count = 0
+
+            # Look up a field at the top level, then fall back to a nested
+            # "product" dict (OPNsense Business sometimes nests these).
+            def _field(key: str) -> str:
+                if not isinstance(status_before, dict):
+                    return ""
+                v = status_before.get(key)
+                if isinstance(v, str) and v.strip() and v.strip().lower() != "none":
+                    return v.strip()
+                product = status_before.get("product")
+                if isinstance(product, dict):
+                    pv = product.get(key)
+                    if isinstance(pv, str) and pv.strip() and pv.strip().lower() != "none":
+                        return pv.strip()
+                return ""
+
             if isinstance(status_before, dict):
-                top_status = str(status_before.get("status", "")).lower()
-                status_upgrade_action = str(status_before.get("status_upgrade_action", "")).lower()
-                product_version = str(status_before.get("product_version", "")).strip()
-                product_latest = str(status_before.get("product_latest", "")).strip()
-                upgrade_major_version = str(status_before.get("upgrade_major_version", "")).strip()
+                # Diagnostic: dump payload structure on first trigger so we can
+                # see what shape this specific firewall returns.
+                try:
+                    logger.info(
+                        f"firmware/status payload for {firewall.hostname}: "
+                        f"top_level_keys={sorted(status_before.keys())}; "
+                        f"product_type={type(status_before.get('product')).__name__}; "
+                        f"product_keys={sorted(status_before['product'].keys()) if isinstance(status_before.get('product'), dict) else 'n/a'}; "
+                        f"raw_status={status_before.get('status')!r}; "
+                        f"raw_status_upgrade_action={status_before.get('status_upgrade_action')!r}; "
+                        f"raw_product_version={status_before.get('product_version')!r}; "
+                        f"raw_product_latest={status_before.get('product_latest')!r}; "
+                        f"raw_upgrade_major_version={status_before.get('upgrade_major_version')!r}; "
+                        f"raw_upgrade_packages_type={type(status_before.get('upgrade_packages')).__name__}; "
+                        f"raw_upgrade_sets_type={type(status_before.get('upgrade_sets')).__name__}"
+                    )
+                except Exception:
+                    pass
+
+                top_status = _field("status").lower()
+                status_upgrade_action = _field("status_upgrade_action").lower()
+                product_version = _field("product_version")
+                product_latest = _field("product_latest")
+                upgrade_major_version = _field("upgrade_major_version")
                 up_packages = status_before.get("upgrade_packages")
                 up_sets = status_before.get("upgrade_sets")
                 if isinstance(up_packages, list):
                     upgrade_packages_count = len(up_packages)
                 if isinstance(up_sets, list):
                     upgrade_sets_count = len(up_sets)
+                # Fall back to extract_firmware_version which already walks nested
+                # structures, in case "product_version" lives somewhere else.
+                if not product_version:
+                    product_version = extract_firmware_version(status_before) or ""
+                if not product_latest:
+                    product_latest = extract_latest_firmware_version(status_before) or ""
 
             use_upgrade = top_status in ("upgrade", "release_update")
 
