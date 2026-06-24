@@ -6,7 +6,13 @@ from app.database import get_db, SessionLocal
 from app.models import Firewall, Alert, UpdateHistory
 from app.schemas import UpdateHistoryResponse
 from app.services.update_service import UpdateService
-from app.services.opnsense_api import OPNsenseAPI
+from app.services.opnsense_api import (
+    OPNsenseAPI,
+    extract_firmware_version,
+    extract_latest_firmware_version,
+    extract_firmware_update_count,
+    extract_needs_reboot,
+)
 from app.services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)
@@ -52,11 +58,11 @@ async def check_updates(
         status = await api.get_firmware_status()
         return {
             "firewall_id": firewall_id,
-            "updates_available": status.get("updates", 0),
-            "current_version": status.get("product_version"),
-            "latest_version": status.get("product_latest"),
+            "updates_available": extract_firmware_update_count(status),
+            "current_version": extract_firmware_version(status),
+            "latest_version": extract_latest_firmware_version(status),
             "download_size": status.get("download_size"),
-            "needs_reboot": str(status.get("upgrade_needs_reboot", "0")) == "1",
+            "needs_reboot": extract_needs_reboot(status),
             "status_msg": status.get("status_msg"),
         }
     except Exception as e:

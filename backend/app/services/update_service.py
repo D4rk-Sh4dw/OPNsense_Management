@@ -7,6 +7,12 @@ from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
 from app.services.email_service import EmailService
 from app.services.backup_service import BackupService
+from app.services.opnsense_api import (
+    extract_firmware_version,
+    extract_latest_firmware_version,
+    extract_firmware_update_count,
+    extract_needs_reboot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +58,7 @@ class UpdateService:
 
             # Get current version
             status_before = await api_client.get_firmware_status()
-            update_record.version_before = status_before.get("product_version")
+            update_record.version_before = extract_firmware_version(status_before)
 
             # Create pre-update backup
             logger.info(f"Creating pre-update backup for {firewall.hostname}")
@@ -88,7 +94,7 @@ class UpdateService:
 
             # Check if reboot needed
             status_after = await api_client.get_firmware_status()
-            if status_after.get("upgrade_needs_reboot"):
+            if extract_needs_reboot(status_after):
                 logger.info(f"Rebooting {firewall.hostname}")
                 await api_client.reboot_system()
                 # Wait for reboot
@@ -96,7 +102,7 @@ class UpdateService:
 
             # Verify update
             status_final = await api_client.get_firmware_status()
-            update_record.version_after = status_final.get("product_version")
+            update_record.version_after = extract_firmware_version(status_final)
             update_record.status = "success"
             update_record.completed_at = datetime.utcnow()
 
@@ -156,14 +162,15 @@ class UpdateService:
 
                 # Check for updates
                 status = await api_client.get_firmware_status()
-                if status.get("updates", 0) > 0:
+                updates_count = extract_firmware_update_count(status)
+                if updates_count > 0:
                     updates_available.append({
                         "firewall_id": fw.id,
                         "hostname": fw.hostname,
                         "customer": fw.customer_name,
-                        "current_version": status.get("product_version"),
-                        "latest_version": status.get("product_latest"),
-                        "updates_count": status.get("updates")
+                        "current_version": extract_firmware_version(status),
+                        "latest_version": extract_latest_firmware_version(status),
+                        "updates_count": updates_count,
                     })
 
             except Exception as e:

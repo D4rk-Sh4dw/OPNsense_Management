@@ -13,6 +13,7 @@ export default function Backups() {
   const [restoreAreas, setRestoreAreas] = useState([])
   const [restoreMode, setRestoreMode] = useState('full') // 'full' | 'partial'
   const [toast, setToast] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const AREA_OPTIONS = [
     { id: 'aliases', label: 'Aliases' },
@@ -133,6 +134,13 @@ export default function Backups() {
   }
 
   const selectedFw = firewalls.find(f => f.id === selected)
+  const filteredBackups = backups.filter((b) => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return true
+    const dateStr = new Date(b.created_at).toLocaleString().toLowerCase()
+    const haystack = [b.filename, b.triggered_by, dateStr].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
@@ -199,6 +207,15 @@ export default function Backups() {
             </div>
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search backup filename, date or trigger..."
+                  className="w-full md:w-[24rem] px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                />
+              </div>
               <table className="w-full">
                 <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
                   <tr>
@@ -210,7 +227,7 @@ export default function Backups() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {backups.map(b => (
+                  {filteredBackups.map(b => (
                     <tr key={b.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
                       <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{new Date(b.created_at).toLocaleString()}</td>
                       <td className="px-6 py-4 text-xs font-mono text-gray-600 dark:text-gray-400">{b.filename}</td>
@@ -246,6 +263,13 @@ export default function Backups() {
                       </td>
                     </tr>
                   ))}
+                  {filteredBackups.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                        No backup matches your search.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

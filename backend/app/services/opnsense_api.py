@@ -1,11 +1,135 @@
 import base64
 import logging
+import re
 from typing import Optional, Dict, Any
 import httpx
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _to_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"1", "true", "yes", "on", "enabled", "running", "up"}:
+            return True
+        if v in {"0", "false", "no", "off", "disabled", "stopped", "down"}:
+            return False
+    return None
+
+
+def _extract_version(status: Dict[str, Any], keys: list[str]) -> Optional[str]:
+    for key in keys:
+        value = status.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    product = status.get("product")
+    if isinstance(product, dict):
+        for key in keys:
+            value = product.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def extract_firmware_update_count(status: Dict[str, Any]) -> int:
+    """Best-effort update count parser for different OPNsense firmware payload shapes."""
+    candidates = [
+        status.get("updates"),
+        status.get("update_count"),
+        status.get("updates_count"),
+        status.get("upgrade_packages"),
+        status.get("packages"),
+        status.get("all_packages"),
+    ]
+
+    def _parse(v: Any) -> Optional[int]:
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return 1 if v else 0
+        if isinstance(v, (int, float)):
+            return int(v)
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.isdigit():
+                return int(stripped)
+            m = re.search(r"(\d+)", stripped)
+            if m:
+                return int(m.group(1))
+            return None
+        if isinstance(v, (list, tuple, set)):
+            return len(v)
+        if isinstance(v, dict):
+            for key in ("total", "count", "all", "updates", "upgrade_packages", "rowCount"):
+                parsed = _parse(v.get(key))
+                if parsed is not None:
+                    return parsed
+            for key in ("rows", "packages", "items"):
+                if isinstance(v.get(key), list):
+                    return len(v.get(key))
+        return None
+
+    for value in candidates:
+        parsed = _parse(value)
+        if parsed is not None:
+            return max(0, parsed)
+
+    status_msg = status.get("status_msg")
+    if isinstance(status_msg, str):
+        m = re.search(r"(\d+)\s+update", status_msg.lower())
+        if m:
+            return int(m.group(1))
+
+    current_version = extract_firmware_version(status)
+    latest_version = extract_latest_firmware_version(status)
+    if current_version and latest_version and current_version != latest_version:
+        return 1
+
+    return 0
+
+
+def extract_firmware_version(status: Dict[str, Any]) -> Optional[str]:
+    return _extract_version(status, ["product_version", "version", "running_version", "installed_version"])
+
+
+def extract_latest_firmware_version(status: Dict[str, Any]) -> Optional[str]:
+    return _extract_version(status, ["product_latest", "latest_version", "upgrade_version", "new_version"])
+
+
+def extract_needs_reboot(status: Dict[str, Any]) -> bool:
+    for key in ("upgrade_needs_reboot", "needs_reboot", "reboot_required"):
+        parsed = _to_bool(status.get(key))
+        if parsed is not None:
+            return parsed
+    return False
+
+
+def extract_license_type(status: Dict[str, Any]) -> Optional[str]:
+    """Detect business/community edition from firmware status across variant payloads."""
+    text_parts = []
+    for key in ("product_name", "product", "edition", "license", "license_type", "product_edition"):
+        value = status.get(key)
+        if isinstance(value, str):
+            text_parts.append(value)
+        elif isinstance(value, dict):
+            for sub_value in value.values():
+                if isinstance(sub_value, str):
+                    text_parts.append(sub_value)
+
+    haystack = " ".join(text_parts).lower()
+    if not haystack:
+        return None
+    if "business" in haystack or "business edition" in haystack:
+        return "business"
+    if "community" in haystack or "community edition" in haystack:
+        return "community"
+    return None
 
 
 class OPNsenseAPI:

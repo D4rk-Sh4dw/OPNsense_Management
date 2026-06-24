@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import Firewall, FirewallStatus, Alert
-from app.services.opnsense_api import OPNsenseAPI
+from app.services.opnsense_api import OPNsenseAPI, extract_firmware_version, extract_firmware_update_count
 from app.services.encryption_service import EncryptionService
 from app.services.email_service import EmailService, resolve_firewall_recipients
 from app.config import get_settings
@@ -285,8 +285,8 @@ class MonitoringService:
             # Firmware status
             try:
                 fw_status = await api_client.get_firmware_status()
-                status.firmware_version = fw_status.get("product_version")
-                status.updates_available = int(fw_status.get("updates", 0) or 0)
+                status.firmware_version = extract_firmware_version(fw_status)
+                status.updates_available = extract_firmware_update_count(fw_status)
             except Exception as e:
                 logger.warning(f"Firmware status failed for {firewall.hostname}: {e}")
 

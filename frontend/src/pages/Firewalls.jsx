@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { firewallsAPI } from '../api/client'
 
@@ -32,6 +32,22 @@ export default function Firewalls() {
   const [formError, setFormError] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [formData, setFormData] = useState(EMPTY_FORM)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredFirewalls = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return firewalls || []
+    return (firewalls || []).filter((fw) => {
+      const haystack = [
+        fw.customer_name,
+        fw.hostname,
+        fw.ip,
+        fw.license_type,
+        fw.location_address,
+      ].filter(Boolean).join(' ').toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [firewalls, searchQuery])
 
   useEffect(() => {
     loadFirewalls()
@@ -136,7 +152,7 @@ export default function Firewalls() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">Managed Firewalls</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">Total: {firewalls?.length || 0} firewalls</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">Total: {firewalls?.length || 0} firewalls{searchQuery.trim() ? `, shown: ${filteredFirewalls.length}` : ''}</p>
         </div>
         <button
           onClick={() => { setShowAddForm(!showAddForm); setFormError(null) }}
@@ -151,6 +167,16 @@ export default function Firewalls() {
           {error}
         </div>
       )}
+
+      <div className="mb-6">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by customer, hostname, IP, license or location..."
+          className="w-full md:w-[28rem] px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+        />
+      </div>
 
       {/* ── Add Firewall Form ─────────────────────────── */}
       {showAddForm && (
@@ -342,7 +368,7 @@ export default function Firewalls() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {firewalls.map((fw) => (
+                {filteredFirewalls.map((fw) => (
                   <tr key={fw.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
                     <td className="px-6 py-4 font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</td>
                     <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || '—'}</td>
@@ -387,6 +413,13 @@ export default function Firewalls() {
                     </td>
                   </tr>
                 ))}
+                {filteredFirewalls.length === 0 && (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                      No firewall matches your search.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

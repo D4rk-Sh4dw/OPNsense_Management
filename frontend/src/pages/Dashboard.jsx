@@ -9,6 +9,7 @@ export default function Dashboard() {
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [intervalSec, setIntervalSec] = useState(15)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     loadData(false)
@@ -56,6 +57,19 @@ export default function Dashboard() {
       setRefreshing(false)
     }
   }
+
+  const filteredFirewalls = (firewalls || []).filter((fw) => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return true
+    const haystack = [
+      fw.customer_name,
+      fw.hostname,
+      fw.ip,
+      fw.firmware_version,
+      fw.online ? 'online' : 'offline',
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
 
   if (loading) {
     return (
@@ -138,6 +152,15 @@ export default function Dashboard() {
 
       {/* Firewalls Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search customer, hostname, IP, status or firmware..."
+            className="w-full md:w-[26rem] px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white dark:bg-gray-800"
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
@@ -153,8 +176,8 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {firewalls && firewalls.length > 0 ? (
-                firewalls.map((fw) => (
+              {filteredFirewalls && filteredFirewalls.length > 0 ? (
+                filteredFirewalls.map((fw) => (
                   <tr key={fw.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
                     <td className="px-6 py-4 font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</td>
                     <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || 'N/A'}</td>
@@ -217,8 +240,10 @@ export default function Dashboard() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
-                    No firewalls registered yet. Go to Firewalls tab to add one.
+                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    {firewalls && firewalls.length > 0
+                      ? 'No firewall matches your search.'
+                      : 'No firewalls registered yet. Go to Firewalls tab to add one.'}
                   </td>
                 </tr>
               )}

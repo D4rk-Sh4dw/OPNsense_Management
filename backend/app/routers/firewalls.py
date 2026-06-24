@@ -1,7 +1,8 @@
 import logging
-from typing import List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Firewall, FirewallStatus, Alert
@@ -18,32 +19,29 @@ from app.schemas import (
 )
 from app.services.encryption_service import EncryptionService
 from app.services.monitoring_service import MonitoringService
-from app.services.opnsense_api import OPNsenseAPI
-
-import logging
-from typing import List
-from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.orm import Session
-from app.database import get_db
-from app.models import Firewall, FirewallStatus, Alert
-from app.schemas import (
-    FirewallCreate,
-    FirewallUpdate,
-    FirewallResponse,
-    FirewallDetailedResponse,
-    FirewallStatusResponse,
-    BackupResponse,
-    AlertResponse,
-    DashboardSummary,
-    FirewallQuickStatus,
-)
-from app.services.encryption_service import EncryptionService
-from app.services.monitoring_service import MonitoringService
-from app.services.opnsense_api import OPNsenseAPI
+from app.services.opnsense_api import OPNsenseAPI, extract_license_type, extract_firmware_version
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
+
+
+async def _geocode_address(address: str) -> Optional[Dict[str, Any]]:
+    """Resolve an address using Nominatim and return the best hit or None."""
+    normalized = (address or "").strip()
+    if not normalized:
+        return None
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": normalized, "format": "json", "limit": 1},
+            headers={"User-Agent": "OPNsense-CMS/1.0"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    if not data:
+        return None
+    return data[0]
 
 
 @router.get("/map")
@@ -108,8 +106,6 @@ async def geocode_firewall(
     db: Session = Depends(get_db),
 ):
     """Geocode an address string via Nominatim and store lat/lon on the firewall."""
-    import httpx
-
     firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
@@ -119,17 +115,9 @@ async def geocode_firewall(
         raise HTTPException(status_code=400, detail="address is required")
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": address, "format": "json", "limit": 1},
-                headers={"User-Agent": "OPNsense-CMS/1.0"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        if not data:
+        hit = await _geocode_address(address)
+        if not hit:
             raise HTTPException(status_code=404, detail=f"No geocoding result for '{address}'")
-        hit = data[0]
         firewall.location_address = address
         firewall.location_lat = float(hit["lat"])
         firewall.location_lon = float(hit["lon"])
@@ -187,8 +175,19 @@ async def create_firewall(
         backup_interval=firewall_data.backup_interval,
         backup_retention=firewall_data.backup_retention,
         tags=firewall_data.tags,
-        notes=firewall_data.notes
+        notes=firewall_data.notes,
+        location_address=firewall_data.location_address,
     )
+
+    # Best effort: if an address is provided during creation, resolve coordinates immediately.
+    if firewall_data.location_address:
+        try:
+            hit = await _geocode_address(firewall_data.location_address)
+            if hit:
+                firewall.location_lat = float(hit["lat"])
+                firewall.location_lon = float(hit["lon"])
+        except Exception as e:
+            logger.warning(f"Initial geocoding failed for {firewall_data.ip}: {e}")
 
     db.add(firewall)
     db.commit()
@@ -416,11 +415,11 @@ async def fetch_license_from_firewall(
         )
         fw_status = await api.get_firmware_status()
 
-        product_name = fw_status.get("product_name", "")
-        if "business" in product_name.lower():
-            license_type = "business"
-        else:
-            license_type = "community"
+        product_name = fw_status.get("product_name") or ""
+        license_type = extract_license_type(fw_status)
+        if not license_type:
+            # Fallback for incomplete payloads: keep current value if present.
+            license_type = firewall.license_type or "community"
 
         firewall.license_type = license_type
         db.commit()
@@ -428,7 +427,7 @@ async def fetch_license_from_firewall(
         return {
             "license_type": license_type,
             "product_name": product_name,
-            "product_version": fw_status.get("product_version"),
+            "product_version": extract_firmware_version(fw_status),
         }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
