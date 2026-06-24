@@ -203,6 +203,42 @@ class UpdateService:
                 if isinstance(status_before, dict):
                     top_msg = str(status_before.get("status", "")).strip()
                     status_msg = str(status_before.get("status_msg", "")).strip()
+
+                # Some OPNsense versions return a placeholder status that says
+                # update details are only available after an explicit check.
+                # In that case, force one more check cycle before deciding
+                # there are really no pending updates.
+                requires_explicit_check = "check for update first" in status_msg.lower()
+                if requires_explicit_check:
+                    try:
+                        await api_client.check_firmware_updates()
+                        for _ in range(10):  # up to ~20s
+                            await asyncio.sleep(2)
+                            try:
+                                candidate = await api_client.get_firmware_status()
+                            except Exception:
+                                continue
+                            if not isinstance(candidate, dict):
+                                continue
+                            try:
+                                fw_info_retry = await api_client.get_firmware_info()
+                                candidate = merge_firmware_info_into_status(candidate, fw_info_retry)
+                            except Exception:
+                                pass
+                            refreshed_pending = extract_firmware_update_count(candidate)
+                            if refreshed_pending > 0:
+                                status_before = candidate
+                                pending_count = refreshed_pending
+                                break
+                    except Exception as e:
+                        logger.warning(f"forced firmware/check failed for {firewall.hostname}: {e}")
+
+            if pending_count <= 0:
+                top_msg = ""
+                status_msg = ""
+                if isinstance(status_before, dict):
+                    top_msg = str(status_before.get("status", "")).strip()
+                    status_msg = str(status_before.get("status_msg", "")).strip()
                 # No-op: don't fail the job when there is simply nothing to do.
                 update_record.status = "success"
                 update_record.version_before = update_record.version_before or extract_firmware_version(status_before)
