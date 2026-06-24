@@ -268,6 +268,14 @@ class MonitoringService:
         firewall: Firewall
     ) -> FirewallStatus:
         """Perform comprehensive health check on firewall"""
+        previous_status = (
+            db.query(FirewallStatus)
+            .filter(FirewallStatus.firewall_id == firewall.id)
+            .order_by(FirewallStatus.checked_at.desc())
+            .first()
+        )
+        was_offline = bool(previous_status is not None and previous_status.online is False)
+
         status = FirewallStatus()
         status.firewall_id = firewall.id
         status.checked_at = datetime.utcnow()
@@ -357,6 +365,19 @@ class MonitoringService:
         db.add(status)
         db.commit()
         db.refresh(status)
+
+        if was_offline and status.online:
+            try:
+                from app.services.update_service import UpdateService
+
+                logger.info(
+                    f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}"
+                )
+                await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+            except Exception as e:
+                logger.warning(
+                    f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {e}"
+                )
 
         # Post-status alerting (uses fresh status + history)
         try:
