@@ -302,7 +302,7 @@ export default function FirewallDetail() {
       notify_emails_license: firewall.notify_emails_license || '',
       license_alert_days: firewall.license_alert_days || '',
       auto_update: !!firewall.auto_update,
-      auto_update_window: firewall.auto_update_window || '',
+      auto_update_window: firewall.auto_update_window || 'sun:02:00',
       backup_interval: firewall.backup_interval || 'daily',
       backup_time: firewall.backup_time || '01:00',
       backup_weekday: firewall.backup_weekday ?? 6,
@@ -311,7 +311,7 @@ export default function FirewallDetail() {
       verify_ssl: !!firewall.verify_ssl,
       license_type: firewall.license_type || '',
       license_expiry: firewall.license_expiry ? firewall.license_expiry.split('T')[0] : '',
-      tags: firewall.tags || '',
+      tags: Array.isArray(firewall.tags) ? firewall.tags.join(', ') : (firewall.tags || ''),
       notes: firewall.notes || '',
       api_secret: '',
       location_address: firewall.location_address || '',
@@ -329,6 +329,9 @@ export default function FirewallDetail() {
       payload.backup_retention = Math.max(1, parseInt(payload.backup_retention, 10) || 1)
       payload.backup_weekday = Math.max(0, Math.min(6, parseInt(payload.backup_weekday, 10) || 0))
       payload.backup_monthday = Math.max(1, Math.min(31, parseInt(payload.backup_monthday, 10) || 1))
+      payload.tags = typeof payload.tags === 'string'
+        ? payload.tags.split(',').map(t => t.trim()).filter(Boolean)
+        : (payload.tags || [])
 
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null })
       await firewallsAPI.update(id, payload)
@@ -351,7 +354,11 @@ export default function FirewallDetail() {
       setEditOpen(false)
       loadAll()
     } catch (e) {
-      showToast('Save failed: ' + (e.response?.data?.detail || e.message), false)
+      const detail = e.response?.data?.detail
+      const errMsg = Array.isArray(detail)
+        ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+        : (detail || e.message)
+      showToast('Save failed: ' + errMsg, false)
     } finally {
       setSavingEdit(false)
     }
@@ -463,7 +470,7 @@ export default function FirewallDetail() {
             <Row label="API Key" value={firewall.api_key} mono />
             <Row label="Backup Schedule" value={formatBackupSchedule(firewall)} />
             <Row label="Auto Update" value={firewall.auto_update ? '✓ Enabled' : 'Disabled'} />
-            <Row label="Auto Update Window" value={firewall.auto_update_window || '—'} />
+            <Row label="Auto Update Window" value={formatAutoUpdateWindow(firewall)} />
             <Row label="Backup Retention" value={`${firewall.backup_retention} days`} />
             <Row label="Notify Email (Fallback)" value={firewall.notify_email || '—'} />
             <Row label="General Recipients" value={firewall.notify_emails_general || '—'} />
@@ -585,8 +592,7 @@ export default function FirewallDetail() {
               <BackupScheduleEditor editForm={editForm} setEditForm={setEditForm} />
               <Field label="Backup Retention (Days)" type="number" value={editForm.backup_retention}
                 onChange={v => setEditForm({...editForm, backup_retention: Math.max(1, parseInt(v) || 1)})} />
-              <Field label="Auto Update Window (e.g. 02:00-04:00)" value={editForm.auto_update_window}
-                onChange={v => setEditForm({...editForm, auto_update_window: v})} />
+              <AutoUpdateWindowEditor editForm={editForm} setEditForm={setEditForm} />
               <Field label="Tags (comma-separated)" value={editForm.tags}
                 onChange={v => setEditForm({...editForm, tags: v})} />
               <div className="flex items-center gap-2 col-span-2">
@@ -707,6 +713,48 @@ function BackupScheduleEditor({ editForm, setEditForm }) {
       )}
     </>
   )
+}
+
+function AutoUpdateWindowEditor({ editForm, setEditForm }) {
+  const raw = editForm.auto_update_window || 'sun:02:00'
+  const parts = raw.split(':')
+  const day = parts[0] || 'sun'
+  const time = parts.length >= 3 ? `${parts[1]}:${parts[2]}` : '02:00'
+  const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00')
+  return (
+    <>
+      <SelectField
+        label="Auto-Update Day"
+        value={day}
+        onChange={v => setEditForm({ ...editForm, auto_update_window: `${v}:${time}` })}
+        options={[
+          ['mon', 'Monday'],
+          ['tue', 'Tuesday'],
+          ['wed', 'Wednesday'],
+          ['thu', 'Thursday'],
+          ['fri', 'Friday'],
+          ['sat', 'Saturday'],
+          ['sun', 'Sunday'],
+        ]}
+      />
+      <SelectField
+        label="Auto-Update Time"
+        value={time}
+        onChange={v => setEditForm({ ...editForm, auto_update_window: `${day}:${v}` })}
+        options={hours.map(h => [h, h])}
+      />
+    </>
+  )
+}
+
+function formatAutoUpdateWindow(firewall) {
+  const raw = firewall?.auto_update_window
+  if (!raw) return '—'
+  const parts = raw.split(':')
+  const day = parts[0]
+  const time = parts.length >= 3 ? `${parts[1]}:${parts[2]}` : raw
+  const dayNames = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }
+  return `${dayNames[day] || day} at ${time}`
 }
 
 function formatBackupSchedule(firewall) {

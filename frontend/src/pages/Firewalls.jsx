@@ -303,14 +303,34 @@ export default function Firewalls() {
               </div>
               <Field label="Backup Retention (count)" name="backup_retention" value={formData.backup_retention} onChange={handleInputChange} type="number" />
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Auto-Update Window</label>
-                <select name="auto_update_window" value={formData.auto_update_window} onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600">
-                  {['mon','tue','wed','thu','fri','sat','sun'].flatMap(d =>
-                    ['00:00','01:00','02:00','03:00','04:00','05:00','22:00','23:00'].map(h => (
-                      <option key={`${d}:${h}`} value={`${d}:${h}`}>{d.toUpperCase()} {h}</option>
-                    ))
-                  )}
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Auto-Update Day</label>
+                <select
+                  value={(formData.auto_update_window || 'sun:02:00').split(':')[0]}
+                  onChange={e => {
+                    const parts = (formData.auto_update_window || 'sun:02:00').split(':')
+                    const time = parts.length >= 3 ? `${parts[1]}:${parts[2]}` : '02:00'
+                    setFormData({ ...formData, auto_update_window: `${e.target.value}:${time}` })
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                >
+                  {[['mon','Monday'],['tue','Tuesday'],['wed','Wednesday'],['thu','Thursday'],['fri','Friday'],['sat','Saturday'],['sun','Sunday']].map(([v,l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Auto-Update Time</label>
+                <select
+                  value={(() => { const p = (formData.auto_update_window || 'sun:02:00').split(':'); return p.length >= 3 ? `${p[1]}:${p[2]}` : '02:00' })()}
+                  onChange={e => {
+                    const day = (formData.auto_update_window || 'sun:02:00').split(':')[0] || 'sun'
+                    setFormData({ ...formData, auto_update_window: `${day}:${e.target.value}` })
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                >
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00').map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-end pb-1">
