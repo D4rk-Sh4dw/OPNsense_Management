@@ -156,6 +156,25 @@ def _send_smtp(to_emails: list[str], subject: str, html: str, plain: str | None,
         _attempt_send(preferred_from)
         logger.info(f"Email sent to {to_emails}: {subject}")
         return True
+    except smtplib.SMTPRecipientsRefused as e:
+        # Some providers report sender-policy violations here (not as SMTPResponseException).
+        can_retry = fallback_from and fallback_from != preferred_from
+        if can_retry:
+            try:
+                logger.warning(
+                    "SMTP recipients refused with sender '%s'. Retrying with authenticated sender '%s'. Details: %s",
+                    preferred_from,
+                    fallback_from,
+                    e.recipients,
+                )
+                _attempt_send(fallback_from)
+                logger.info(f"Email sent to {to_emails}: {subject}")
+                return True
+            except Exception as retry_error:  # noqa: BLE001
+                logger.error(f"Failed to send email to {to_emails}: {retry_error}")
+                return False
+        logger.error(f"Failed to send email to {to_emails}: {e.recipients}")
+        return False
     except smtplib.SMTPResponseException as e:
         # Common with hosted SMTP providers: sender must match authenticated user.
         can_retry = fallback_from and fallback_from != preferred_from and e.smtp_code in {550, 553, 554}
