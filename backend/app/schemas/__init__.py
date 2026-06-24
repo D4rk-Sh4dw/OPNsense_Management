@@ -42,6 +42,9 @@ class FirewallBase(BaseModel):
     auto_update: bool = False
     auto_update_window: str = "sun:02:00"
     backup_interval: str = "daily"
+    backup_time: str = "01:00"
+    backup_weekday: int = 6
+    backup_monthday: int = 1
     backup_retention: int = 30
     tags: Optional[List[str]] = []
     notes: Optional[str] = None
@@ -83,6 +86,9 @@ class FirewallUpdate(BaseModel):
     auto_update: Optional[bool] = None
     auto_update_window: Optional[str] = None
     backup_interval: Optional[str] = None
+    backup_time: Optional[str] = None
+    backup_weekday: Optional[int] = None
+    backup_monthday: Optional[int] = None
     backup_retention: Optional[int] = None
     tags: Optional[List[str]] = None
     notes: Optional[str] = None
@@ -290,3 +296,19 @@ class EmailPreviewResponse(BaseModel):
     html: str
     plain: Optional[str] = None
     recipients: Optional[List[str]] = None
+
+
+class SchedulerSettingsResponse(BaseModel):
+    monitoring_interval_minutes: int
+    license_check_hour: int
+    smart_check_hour: int
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SchedulerSettingsUpdate(BaseModel):
+    monitoring_interval_minutes: Optional[int] = None
+    license_check_hour: Optional[int] = None
+    smart_check_hour: Optional[int] = None

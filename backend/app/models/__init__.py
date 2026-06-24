@@ -38,8 +38,11 @@ class Firewall(Base):
     license_alert_days = Column(String(100), nullable=True)  # CSV of day thresholds e.g. "30,14,7,1"
     auto_update = Column(Boolean, default=False)
     auto_update_window = Column(String(20), default="sun:02:00")  # day:HH:MM format
-    backup_interval = Column(String(20), default="daily")  # "daily" or "weekly"
-    backup_retention = Column(Integer, default=30)
+    backup_interval = Column(String(20), default="daily")  # "hourly", "daily", "weekly", "monthly"
+    backup_time = Column(String(5), default="01:00")  # HH:MM
+    backup_weekday = Column(Integer, default=6)  # 0=Mon ... 6=Sun
+    backup_monthday = Column(Integer, default=1)  # 1..28/31
+    backup_retention = Column(Integer, default=30)  # retention in days
     tags = Column(JSON, default=list)
     notes = Column(Text)
     license_type = Column(String(20), nullable=True)  # "community", "business", None
@@ -122,6 +125,17 @@ class LicenseNotification(Base):
     firewall_id = Column(UUID(as_uuid=True), ForeignKey("firewalls.id"), nullable=False, index=True)
     days_remaining = Column(Integer, nullable=False)  # 14, 7, or 1
     sent_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SchedulerSettings(Base):
+    """Global scheduler settings editable via GUI."""
+    __tablename__ = "scheduler_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    monitoring_interval_minutes = Column(Integer, default=5)
+    license_check_hour = Column(Integer, default=2)
+    smart_check_hour = Column(Integer, default=3)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class EmailTemplate(Base):

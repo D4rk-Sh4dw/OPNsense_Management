@@ -304,7 +304,10 @@ export default function FirewallDetail() {
       auto_update: !!firewall.auto_update,
       auto_update_window: firewall.auto_update_window || '',
       backup_interval: firewall.backup_interval || 'daily',
-      backup_retention: firewall.backup_retention || 7,
+      backup_time: firewall.backup_time || '01:00',
+      backup_weekday: firewall.backup_weekday ?? 6,
+      backup_monthday: firewall.backup_monthday ?? 1,
+      backup_retention: firewall.backup_retention || 30,
       verify_ssl: !!firewall.verify_ssl,
       license_type: firewall.license_type || '',
       license_expiry: firewall.license_expiry ? firewall.license_expiry.split('T')[0] : '',
@@ -322,6 +325,11 @@ export default function FirewallDetail() {
       const payload = { ...editForm }
       const newSecret = payload.api_secret
       delete payload.api_secret
+
+      payload.backup_retention = Math.max(1, parseInt(payload.backup_retention, 10) || 1)
+      payload.backup_weekday = Math.max(0, Math.min(6, parseInt(payload.backup_weekday, 10) || 0))
+      payload.backup_monthday = Math.max(1, Math.min(31, parseInt(payload.backup_monthday, 10) || 1))
+
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null })
       await firewallsAPI.update(id, payload)
       if (newSecret && newSecret.trim()) {
@@ -453,10 +461,10 @@ export default function FirewallDetail() {
           <dl className="space-y-3 text-sm">
             <Row label="IP / URL" value={firewall.ip} mono />
             <Row label="API Key" value={firewall.api_key} mono />
-            <Row label="Backup Interval" value={firewall.backup_interval} />
+            <Row label="Backup Schedule" value={formatBackupSchedule(firewall)} />
             <Row label="Auto Update" value={firewall.auto_update ? '✓ Enabled' : 'Disabled'} />
             <Row label="Auto Update Window" value={firewall.auto_update_window || '—'} />
-            <Row label="Backup Retention" value={`${firewall.backup_retention} backups`} />
+            <Row label="Backup Retention" value={`${firewall.backup_retention} days`} />
             <Row label="Notify Email (Fallback)" value={firewall.notify_email || '—'} />
             <Row label="General Recipients" value={firewall.notify_emails_general || '—'} />
             <Row label="License Recipients" value={firewall.notify_emails_license || '—'} />
@@ -574,11 +582,9 @@ export default function FirewallDetail() {
                 options={[['', '—'], ['community', 'Community'], ['business', 'Business']]} />
               <Field label="License Expiry" type="date" value={editForm.license_expiry}
                 onChange={v => setEditForm({...editForm, license_expiry: v})} />
-              <SelectField label="Backup Interval" value={editForm.backup_interval}
-                onChange={v => setEditForm({...editForm, backup_interval: v})}
-                options={[['hourly','Hourly'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']]} />
-              <Field label="Backup Retention" type="number" value={editForm.backup_retention}
-                onChange={v => setEditForm({...editForm, backup_retention: parseInt(v) || 0})} />
+              <BackupScheduleEditor editForm={editForm} setEditForm={setEditForm} />
+              <Field label="Backup Retention (Days)" type="number" value={editForm.backup_retention}
+                onChange={v => setEditForm({...editForm, backup_retention: Math.max(1, parseInt(v) || 1)})} />
               <Field label="Auto Update Window (e.g. 02:00-04:00)" value={editForm.auto_update_window}
                 onChange={v => setEditForm({...editForm, auto_update_window: v})} />
               <Field label="Tags (comma-separated)" value={editForm.tags}
@@ -647,6 +653,73 @@ function SelectField({ label, value, onChange, options }) {
       </select>
     </div>
   )
+}
+
+function BackupScheduleEditor({ editForm, setEditForm }) {
+  return (
+    <>
+      <SelectField
+        label="Backup Plan"
+        value={editForm.backup_interval}
+        onChange={v => setEditForm({ ...editForm, backup_interval: v })}
+        options={[
+          ['hourly', 'Every Hour'],
+          ['daily', 'Daily'],
+          ['weekly', 'Weekly'],
+          ['monthly', 'Monthly'],
+          ['disabled', 'Disabled'],
+        ]}
+      />
+
+      {editForm.backup_interval !== 'disabled' && editForm.backup_interval !== 'hourly' && (
+        <Field
+          label="Backup Time"
+          type="time"
+          value={editForm.backup_time || '01:00'}
+          onChange={v => setEditForm({ ...editForm, backup_time: v || '01:00' })}
+        />
+      )}
+
+      {editForm.backup_interval === 'weekly' && (
+        <SelectField
+          label="Weekday"
+          value={String(editForm.backup_weekday ?? 6)}
+          onChange={v => setEditForm({ ...editForm, backup_weekday: parseInt(v, 10) })}
+          options={[
+            ['0', 'Monday'],
+            ['1', 'Tuesday'],
+            ['2', 'Wednesday'],
+            ['3', 'Thursday'],
+            ['4', 'Friday'],
+            ['5', 'Saturday'],
+            ['6', 'Sunday'],
+          ]}
+        />
+      )}
+
+      {editForm.backup_interval === 'monthly' && (
+        <Field
+          label="Day of Month"
+          type="number"
+          value={editForm.backup_monthday ?? 1}
+          onChange={v => setEditForm({ ...editForm, backup_monthday: Math.max(1, Math.min(31, parseInt(v) || 1)) })}
+        />
+      )}
+    </>
+  )
+}
+
+function formatBackupSchedule(firewall) {
+  const interval = (firewall?.backup_interval || 'daily').toLowerCase()
+  const time = firewall?.backup_time || '01:00'
+  const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+  if (interval === 'disabled') return 'Disabled'
+  if (interval === 'hourly') return 'Every hour'
+  if (interval === 'daily') return `Daily at ${time}`
+  if (interval === 'weekly') return `Weekly (${weekdayNames[firewall?.backup_weekday ?? 6] || 'Sun'}) at ${time}`
+  if (interval === 'monthly') return `Monthly (day ${firewall?.backup_monthday ?? 1}) at ${time}`
+  return interval
 }
 
 function StatCard({ label, value, live }) {

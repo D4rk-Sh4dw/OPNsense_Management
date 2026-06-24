@@ -3,7 +3,12 @@ import re
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import Firewall, FirewallStatus, Alert
-from app.services.opnsense_api import OPNsenseAPI, extract_firmware_version, extract_firmware_update_count
+from app.services.opnsense_api import (
+    OPNsenseAPI,
+    extract_firmware_version,
+    extract_firmware_update_count,
+    merge_firmware_info_into_status,
+)
 from app.services.encryption_service import EncryptionService
 from app.services.email_service import EmailService, resolve_firewall_recipients
 from app.config import get_settings
@@ -291,6 +296,11 @@ class MonitoringService:
                 except Exception as e:
                     logger.debug(f"firmware/check skipped for {firewall.hostname}: {e}")
                 fw_status = await api_client.get_firmware_status()
+                try:
+                    fw_info = await api_client.get_firmware_info()
+                    fw_status = merge_firmware_info_into_status(fw_status, fw_info)
+                except Exception as e:
+                    logger.debug(f"firmware/info skipped for {firewall.hostname}: {e}")
                 status.firmware_version = extract_firmware_version(fw_status)
                 status.updates_available = extract_firmware_update_count(fw_status)
             except Exception as e:

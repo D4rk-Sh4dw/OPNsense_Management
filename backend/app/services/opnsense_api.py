@@ -293,6 +293,37 @@ def extract_license_expiry(payload: Dict[str, Any], _depth: int = 0) -> Optional
     return None
 
 
+def merge_firmware_info_into_status(
+    status: Dict[str, Any] | None,
+    firmware_info: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    """Merge `firmware/info -> product.product_check` into status payload.
+
+    OPNsense Business and major upgrade scenarios often expose actionable update
+    fields only under firmware/info, while firmware/status may remain
+    status='none'. This helper fills missing/placeholder status fields with
+    product_check values so parsers can detect pending updates consistently.
+    """
+    merged: Dict[str, Any] = dict(status or {})
+    if not isinstance(firmware_info, dict):
+        return merged
+
+    product = firmware_info.get("product")
+    if not isinstance(product, dict):
+        return merged
+
+    product_check = product.get("product_check")
+    if not isinstance(product_check, dict):
+        return merged
+
+    for key, value in product_check.items():
+        existing = merged.get(key)
+        if existing in (None, "", "none") and value not in (None, "", "none"):
+            merged[key] = value
+
+    return merged
+
+
 class OPNsenseAPI:
     """Client for interacting with OPNsense REST API"""
 

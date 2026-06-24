@@ -6,9 +6,11 @@ uses IF NOT EXISTS / IF EXISTS guards.
 import logging
 from sqlalchemy import text
 from app.database import engine, SessionLocal
-from app.models import EmailTemplate, EmailBrandingSettings
+from app.models import EmailTemplate, EmailBrandingSettings, SchedulerSettings
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 _ALTER_STATEMENTS = [
@@ -19,16 +21,50 @@ _ALTER_STATEMENTS = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS location_address TEXT",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS location_lat DOUBLE PRECISION",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS location_lon DOUBLE PRECISION",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS backup_time VARCHAR(5)",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS backup_weekday INTEGER",
+    "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS backup_monthday INTEGER",
+]
+
+
+_DDL_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS scheduler_settings (
+        id INTEGER PRIMARY KEY,
+        monitoring_interval_minutes INTEGER DEFAULT 5,
+        license_check_hour INTEGER DEFAULT 2,
+        smart_check_hour INTEGER DEFAULT 3,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+]
+
+
+_BACKFILL_STATEMENTS = [
+    "UPDATE firewalls SET backup_time = '01:00' WHERE backup_time IS NULL OR backup_time = ''",
+    "UPDATE firewalls SET backup_weekday = 6 WHERE backup_weekday IS NULL",
+    "UPDATE firewalls SET backup_monthday = 1 WHERE backup_monthday IS NULL",
+    "UPDATE firewalls SET backup_retention = 30 WHERE backup_retention IS NULL OR backup_retention < 1",
 ]
 
 
 def _apply_alters() -> None:
     with engine.begin() as conn:
+        for stmt in _DDL_STATEMENTS:
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Migration failed for `{stmt}`: {e}")
         for stmt in _ALTER_STATEMENTS:
             try:
                 conn.execute(text(stmt))
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Migration failed for `{stmt}`: {e}")
+        for stmt in _BACKFILL_STATEMENTS:
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Backfill failed for `{stmt}`: {e}")
 
 
 _DEFAULT_TEMPLATES = [
@@ -158,11 +194,29 @@ def _seed_branding() -> None:
         db.close()
 
 
+def _seed_scheduler_settings() -> None:
+    db = SessionLocal()
+    try:
+        if not db.query(SchedulerSettings).filter(SchedulerSettings.id == 1).first():
+            db.add(
+                SchedulerSettings(
+                    id=1,
+                    monitoring_interval_minutes=settings.MONITORING_INTERVAL_MINUTES,
+                    license_check_hour=settings.LICENSE_CHECK_HOUR,
+                    smart_check_hour=settings.SMART_CHECK_HOUR,
+                )
+            )
+            db.commit()
+    finally:
+        db.close()
+
+
 def run() -> None:
     """Entrypoint called from FastAPI lifespan."""
     try:
         _apply_alters()
         _seed_templates()
         _seed_branding()
+        _seed_scheduler_settings()
     except Exception as e:  # noqa: BLE001
         logger.exception(f"Startup migrations failed: {e}")

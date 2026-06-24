@@ -12,6 +12,7 @@ import Backups from './pages/Backups'
 import Alerts from './pages/Alerts'
 import EmailSettings from './pages/EmailSettings'
 import GeoMap from './pages/GeoMap'
+import Settings from './pages/Settings'
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/email" element={<EmailSettings />} />
             <Route path="/map" element={<GeoMap />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

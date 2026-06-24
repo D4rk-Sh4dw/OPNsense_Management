@@ -10,7 +10,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
 from app.config import get_settings
-from app.models import Firewall, Alert, LicenseNotification
+from app.models import Firewall, Backup, LicenseNotification, SchedulerSettings
 from app.services.monitoring_service import MonitoringService
 from app.services.backup_service import BackupService
 from app.services.update_service import UpdateService
@@ -21,11 +21,83 @@ from app.services.encryption_service import EncryptionService
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 settings = get_settings()
+SCHEDULER_REFRESH_MINUTES = 1
+BACKUP_SCAN_INTERVAL_MINUTES = 15
 
 
 def _new_session() -> Session:
     """Create a fresh DB session for a scheduled task."""
     return SessionLocal()
+
+
+def _load_scheduler_values(db: Session) -> dict:
+    row = db.query(SchedulerSettings).filter(SchedulerSettings.id == 1).first()
+    if not row:
+        row = SchedulerSettings(id=1)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return {
+        "monitoring_interval_minutes": max(1, int(row.monitoring_interval_minutes or settings.MONITORING_INTERVAL_MINUTES)),
+        "license_check_hour": max(0, min(23, int(row.license_check_hour if row.license_check_hour is not None else settings.LICENSE_CHECK_HOUR))),
+        "smart_check_hour": max(0, min(23, int(row.smart_check_hour if row.smart_check_hour is not None else settings.SMART_CHECK_HOUR))),
+    }
+
+
+def _parse_hh_mm(value: str | None, default_hour: int = 1) -> tuple[int, int]:
+    if not value:
+        return default_hour, 0
+    try:
+        hour_s, minute_s = str(value).split(":", 1)
+        hour = max(0, min(23, int(hour_s)))
+        minute = max(0, min(59, int(minute_s)))
+        return hour, minute
+    except Exception:
+        return default_hour, 0
+
+
+def _is_backup_due(fw: Firewall, last_auto: Backup | None, now: datetime) -> bool:
+    interval = (fw.backup_interval or "daily").lower()
+    if interval in ("off", "disabled", "none"):
+        return False
+
+    hour, minute = _parse_hh_mm(getattr(fw, "backup_time", None), default_hour=1)
+    weekday = int(getattr(fw, "backup_weekday", 6) or 6)
+    monthday = int(getattr(fw, "backup_monthday", 1) or 1)
+
+    if interval == "hourly":
+        if last_auto is None:
+            return True
+        return now - last_auto.created_at >= timedelta(hours=1)
+
+    # For time-based schedules, run in a 15 minute window to avoid missing
+    # exact minute alignment when the scheduler process restarts.
+    in_window = now.hour == hour and minute <= now.minute < minute + BACKUP_SCAN_INTERVAL_MINUTES
+    if not in_window:
+        return False
+
+    if interval == "daily":
+        return last_auto is None or last_auto.created_at.date() != now.date()
+
+    if interval == "weekly":
+        if now.weekday() != max(0, min(6, weekday)):
+            return False
+        if last_auto is None:
+            return True
+        iso_now = now.isocalendar()
+        iso_last = last_auto.created_at.isocalendar()
+        return (iso_last.year, iso_last.week) != (iso_now.year, iso_now.week)
+
+    if interval == "monthly":
+        target_day = max(1, min(31, monthday))
+        month_last_day = ((now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)).day
+        if now.day != min(target_day, month_last_day):
+            return False
+        if last_auto is None:
+            return True
+        return (last_auto.created_at.year, last_auto.created_at.month) != (now.year, now.month)
+
+    return False
 
 
 async def monitor_all_firewalls():
@@ -102,18 +174,29 @@ async def check_license_expiry():
 
 
 async def backup_all_firewalls():
-    """Create automated backups"""
+    """Create automated backups based on per-firewall schedules."""
     logger.info("Starting backup task...")
     db = _new_session()
 
     try:
         firewalls = db.query(Firewall).all()
 
+        now = datetime.utcnow()
+
         for fw in firewalls:
             try:
-                # Check backup interval
-                # This is simplified - in production use proper scheduling
-                if fw.backup_interval in ["daily", "weekly"]:
+                last_auto = (
+                    db.query(Backup)
+                    .filter(
+                        Backup.firewall_id == fw.id,
+                        Backup.triggered_by == "auto",
+                        Backup.last_error.is_(None),
+                    )
+                    .order_by(Backup.created_at.desc())
+                    .first()
+                )
+
+                if _is_backup_due(fw, last_auto, now):
                     await BackupService.create_backup(db, fw, "auto")
                     await BackupService.cleanup_old_backups(db, fw)
                     logger.info(f"Backup completed: {fw.hostname}")
@@ -199,11 +282,49 @@ def sync_job(coro_factory):
         logger.exception(f"Scheduled job crashed: {e}")
 
 
+def refresh_scheduler_jobs(scheduler: BlockingScheduler):
+    """Apply runtime scheduler settings from DB without process restart."""
+    db = _new_session()
+    try:
+        cfg = _load_scheduler_values(db)
+    except Exception as e:
+        logger.warning(f"Could not load scheduler settings: {e}")
+        db.close()
+        return
+    finally:
+        db.close()
+
+    try:
+        scheduler.reschedule_job(
+            "monitor_firewalls",
+            trigger="interval",
+            minutes=cfg["monitoring_interval_minutes"],
+        )
+        scheduler.reschedule_job(
+            "check_licenses",
+            trigger="cron",
+            hour=cfg["license_check_hour"],
+        )
+        scheduler.reschedule_job(
+            "smart_check",
+            trigger="cron",
+            hour=cfg["smart_check_hour"],
+        )
+    except Exception as e:
+        logger.warning(f"Could not reschedule jobs dynamically: {e}")
+
+
 def start_scheduler():
     """Start APScheduler with all tasks (blocking)"""
 
     # Create tables
     Base.metadata.create_all(bind=engine)
+
+    db = _new_session()
+    try:
+        cfg = _load_scheduler_values(db)
+    finally:
+        db.close()
 
     scheduler = BlockingScheduler()
 
@@ -211,7 +332,7 @@ def start_scheduler():
     scheduler.add_job(
         sync_job,
         'interval',
-        minutes=settings.MONITORING_INTERVAL_MINUTES,
+        minutes=cfg["monitoring_interval_minutes"],
         args=[monitor_all_firewalls],
         id='monitor_firewalls',
         name='Monitor all firewalls'
@@ -220,7 +341,7 @@ def start_scheduler():
     scheduler.add_job(
         sync_job,
         'cron',
-        hour=settings.LICENSE_CHECK_HOUR,
+        hour=cfg["license_check_hour"],
         args=[check_license_expiry],
         id='check_licenses',
         name='Check license expiry'
@@ -228,11 +349,11 @@ def start_scheduler():
 
     scheduler.add_job(
         sync_job,
-        'cron',
-        hour=settings.BACKUP_CHECK_HOUR,
+        'interval',
+        minutes=BACKUP_SCAN_INTERVAL_MINUTES,
         args=[backup_all_firewalls],
         id='backup_firewalls',
-        name='Create automatic backups'
+        name='Create automatic backups (per firewall schedules)'
     )
 
     scheduler.add_job(
@@ -247,10 +368,19 @@ def start_scheduler():
     scheduler.add_job(
         sync_job,
         'cron',
-        hour=settings.SMART_CHECK_HOUR,
+        hour=cfg["smart_check_hour"],
         args=[smart_check_all_firewalls],
         id='smart_check',
         name='Daily S.M.A.R.T. disk check'
+    )
+
+    scheduler.add_job(
+        refresh_scheduler_jobs,
+        'interval',
+        minutes=SCHEDULER_REFRESH_MINUTES,
+        args=[scheduler],
+        id='refresh_scheduler_jobs',
+        name='Refresh scheduler settings from DB'
     )
 
     logger.info("Scheduler starting...")

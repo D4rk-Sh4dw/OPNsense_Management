@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -13,6 +14,7 @@ from app.services.opnsense_api import (
     extract_latest_firmware_version,
     extract_firmware_update_count,
     extract_needs_reboot,
+    merge_firmware_info_into_status,
 )
 from app.services.encryption_service import EncryptionService
 
@@ -57,7 +59,32 @@ async def check_updates(
             await api.check_firmware_updates()
         except Exception:
             pass  # check endpoint may not always return JSON
+
+        # firmware/check is async on OPNsense. Poll briefly so we don't read a
+        # transitional empty status immediately after triggering the check.
         status = await api.get_firmware_status()
+        refreshed = None
+        for _ in range(10):
+            await asyncio.sleep(2)
+            try:
+                candidate = await api.get_firmware_status()
+            except Exception:
+                continue
+            if not isinstance(candidate, dict):
+                continue
+            candidate_version = extract_firmware_version(candidate)
+            if candidate_version or extract_firmware_update_count(candidate) > 0:
+                refreshed = candidate
+                break
+        if isinstance(refreshed, dict):
+            status = refreshed
+
+        # Merge product.product_check from firmware/info (major upgrade signals).
+        try:
+            info = await api.get_firmware_info()
+            status = merge_firmware_info_into_status(status, info)
+        except Exception:
+            pass
 
         updates_count = extract_firmware_update_count(status)
         current_version = extract_firmware_version(status)

@@ -42,7 +42,6 @@ class Settings(BaseSettings):
     # Scheduling
     LICENSE_CHECK_HOUR: int = 2  # 2 AM daily
     MONITORING_INTERVAL_MINUTES: int = 5
-    BACKUP_CHECK_HOUR: int = 1  # 1 AM daily
     SMART_CHECK_HOUR: int = 3  # 3 AM daily
 
     # License alerting (CSV of day thresholds, global default if firewall has no override)

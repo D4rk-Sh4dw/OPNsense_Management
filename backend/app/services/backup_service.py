@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.models import Firewall, Backup, Alert
 from app.services.opnsense_api import OPNsenseAPI
@@ -107,13 +107,16 @@ class BackupService:
             firewall: Firewall instance
         """
         try:
-            # Get backups from database
-            backups = db.query(Backup).filter(
-                Backup.firewall_id == firewall.id
-            ).order_by(Backup.created_at.desc()).all()
+            retention_days = max(1, int(firewall.backup_retention or 30))
+            cutoff = datetime.utcnow() - timedelta(days=retention_days)
+
+            old_backups = db.query(Backup).filter(
+                Backup.firewall_id == firewall.id,
+                Backup.created_at < cutoff,
+            ).all()
 
             # Delete old backups from filesystem and database
-            for backup in backups[firewall.backup_retention:]:
+            for backup in old_backups:
                 if backup.filepath and os.path.exists(backup.filepath):
                     os.remove(backup.filepath)
                     logger.info(f"Deleted old backup: {backup.filepath}")

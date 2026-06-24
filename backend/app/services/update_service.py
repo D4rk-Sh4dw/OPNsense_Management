@@ -13,6 +13,7 @@ from app.services.opnsense_api import (
     extract_latest_firmware_version,
     extract_firmware_update_count,
     extract_needs_reboot,
+    merge_firmware_info_into_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -539,6 +540,11 @@ class UpdateService:
 
                 # Check for updates
                 status = await api_client.get_firmware_status()
+                try:
+                    firmware_info = await api_client.get_firmware_info()
+                    status = merge_firmware_info_into_status(status, firmware_info)
+                except Exception:
+                    pass
                 updates_count = extract_firmware_update_count(status)
                 if updates_count > 0:
                     updates_available.append({

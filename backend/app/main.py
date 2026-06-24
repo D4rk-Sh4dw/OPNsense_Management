@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import firewalls, backups, updates, alerts, email
+from app.routers import firewalls, backups, updates, alerts, email, settings as app_settings
 from app import migrations
 
 # Configure logging
@@ -50,6 +50,7 @@ app.include_router(backups.router)
 app.include_router(updates.router)
 app.include_router(alerts.router)
 app.include_router(email.router)
+app.include_router(app_settings.router)
 
 
 @app.get("/health")

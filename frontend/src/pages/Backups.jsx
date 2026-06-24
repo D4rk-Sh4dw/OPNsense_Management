@@ -135,6 +135,19 @@ export default function Backups() {
   }
 
   const selectedFw = firewalls.find(f => f.id === selected)
+  const formatSchedule = (fw) => {
+    if (!fw) return 'n/a'
+    const interval = String(fw.backup_interval || 'daily').toLowerCase()
+    const time = fw.backup_time || '01:00'
+    const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+    if (interval === 'disabled') return 'Disabled'
+    if (interval === 'hourly') return 'Every hour'
+    if (interval === 'daily') return `Daily at ${time}`
+    if (interval === 'weekly') return `Weekly (${weekdayNames[fw.backup_weekday ?? 6] || 'Sun'}) at ${time}`
+    if (interval === 'monthly') return `Monthly (day ${fw.backup_monthday ?? 1}) at ${time}`
+    return interval
+  }
   const filteredFirewallOptions = firewalls.filter((fw) => {
     if (fw.id === selected) return true
     const q = firewallSearch.trim().toLowerCase()
@@ -207,8 +220,8 @@ export default function Backups() {
           {/* Backup Info Bar */}
           {selectedFw && (
             <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2 mb-4 text-sm text-indigo-800 flex gap-6">
-              <span>Retention: <strong>{selectedFw.backup_retention} backups</strong></span>
-              <span>Interval: <strong>{selectedFw.backup_interval}</strong></span>
+              <span>Retention: <strong>{selectedFw.backup_retention} days</strong></span>
+              <span>Schedule: <strong>{formatSchedule(selectedFw)}</strong></span>
               <span>Total: <strong>{backups.length}</strong></span>
             </div>
           )}

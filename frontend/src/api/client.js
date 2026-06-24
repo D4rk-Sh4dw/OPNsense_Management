@@ -86,4 +86,9 @@ export const emailAPI = {
   updateBranding: (data) => api.patch('/email/branding', data),
 }
 
+export const settingsAPI = {
+  getScheduler: () => api.get('/settings/scheduler'),
+  updateScheduler: (data) => api.patch('/settings/scheduler', data),
+}
+
 export default api

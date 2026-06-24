@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS firewalls (
     auto_update BOOLEAN DEFAULT FALSE,
     auto_update_window VARCHAR(20) DEFAULT 'sun:02:00',
     backup_interval VARCHAR(20) DEFAULT 'daily',
+    backup_time VARCHAR(5) DEFAULT '01:00',
+    backup_weekday INTEGER DEFAULT 6,
+    backup_monthday INTEGER DEFAULT 1,
     backup_retention INTEGER DEFAULT 30,
     tags JSONB DEFAULT '[]'::jsonb,
     notes TEXT,
@@ -122,3 +125,12 @@ CREATE TABLE IF NOT EXISTS license_notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_license_notif_fk ON license_notifications(firewall_id);
 CREATE INDEX IF NOT EXISTS idx_license_notif_sent ON license_notifications(sent_at DESC);
+
+-- Global scheduler settings (singleton id=1)
+CREATE TABLE IF NOT EXISTS scheduler_settings (
+    id INTEGER PRIMARY KEY,
+    monitoring_interval_minutes INTEGER DEFAULT 5,
+    license_check_hour INTEGER DEFAULT 2,
+    smart_check_hour INTEGER DEFAULT 3,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
