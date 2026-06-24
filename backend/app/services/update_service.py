@@ -199,16 +199,22 @@ class UpdateService:
                     f"log_changed={bool(last_log_snapshot and last_log_snapshot != pre_log_snapshot)})"
                 )
 
-            # Check if reboot needed
-            status_after = await api_client.get_firmware_status()
-            if extract_needs_reboot(status_after):
-                logger.info(f"Rebooting {firewall.hostname}")
-                await api_client.reboot_system()
-                # Wait for reboot
-                await asyncio.sleep(60)
+            # OPNsense reboots itself when the firmware job requires it
+            # (firmware/upgrade triggers its own reboot; firmware/update for
+            # plain package updates usually doesn't need one). We just record
+            # whether a reboot is pending for informational purposes — calling
+            # reboot_system() manually here previously caused premature reboots
+            # while configd was still running pkg upgrade.
+            try:
+                status_after = await api_client.get_firmware_status()
+                if extract_needs_reboot(status_after):
+                    update_record.log += "; reboot_pending=true (handled by OPNsense)"
+            except Exception as e:
+                logger.warning(f"post-update firmware/status check failed for {firewall.hostname}: {e}")
+                status_after = {}
 
             # Verify update
-            status_final = await api_client.get_firmware_status()
+            status_final = status_after or await api_client.get_firmware_status()
             update_record.version_after = extract_firmware_version(status_final)
             update_record.status = "success"
             update_record.completed_at = datetime.utcnow()
