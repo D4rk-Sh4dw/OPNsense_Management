@@ -136,6 +136,7 @@ export default function Backups() {
 
   const selectedFw = firewalls.find(f => f.id === selected)
   const filteredFirewallOptions = firewalls.filter((fw) => {
+    if (fw.id === selected) return true
     const q = firewallSearch.trim().toLowerCase()
     if (!q) return true
     const haystack = [fw.customer_name, fw.hostname, fw.ip].filter(Boolean).join(' ').toLowerCase()
@@ -183,12 +184,15 @@ export default function Backups() {
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 font-semibold"
             />
             <select
-              value={selected || ''}
-              onChange={e => setSelected(e.target.value)}
+              value={selected != null ? String(selected) : ''}
+              onChange={e => {
+                setSelected(e.target.value)
+                setFirewallSearch('')
+              }}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 font-semibold"
             >
               {filteredFirewallOptions.map(fw => (
-                <option key={fw.id} value={fw.id}>{fw.customer_name} – {fw.ip}</option>
+                <option key={fw.id} value={String(fw.id)}>{fw.customer_name} – {fw.ip}</option>
               ))}
             </select>
             <button
