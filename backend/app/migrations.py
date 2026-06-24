@@ -24,6 +24,7 @@ _ALTER_STATEMENTS = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS backup_time VARCHAR(5)",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS backup_weekday INTEGER",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS backup_monthday INTEGER",
+    "ALTER TABLE scheduler_settings ADD COLUMN IF NOT EXISTS monitoring_interval_seconds INTEGER DEFAULT 10",
 ]
 
 
@@ -31,6 +32,7 @@ _DDL_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS scheduler_settings (
         id INTEGER PRIMARY KEY,
+        monitoring_interval_seconds INTEGER DEFAULT 10,
         monitoring_interval_minutes INTEGER DEFAULT 5,
         license_check_hour INTEGER DEFAULT 2,
         smart_check_hour INTEGER DEFAULT 3,
@@ -201,6 +203,7 @@ def _seed_scheduler_settings() -> None:
             db.add(
                 SchedulerSettings(
                     id=1,
+                    monitoring_interval_seconds=settings.MONITORING_INTERVAL_SECONDS,
                     monitoring_interval_minutes=settings.MONITORING_INTERVAL_MINUTES,
                     license_check_hour=settings.LICENSE_CHECK_HOUR,
                     smart_check_hour=settings.SMART_CHECK_HOUR,

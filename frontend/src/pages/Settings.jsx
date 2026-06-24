@@ -7,7 +7,7 @@ export default function Settings() {
   const [error, setError] = useState(null)
   const [ok, setOk] = useState(null)
   const [form, setForm] = useState({
-    monitoring_interval_minutes: 5,
+    monitoring_interval_seconds: 10,
     license_check_hour: 2,
     smart_check_hour: 3,
   })
@@ -21,7 +21,7 @@ export default function Settings() {
     try {
       const res = await settingsAPI.getScheduler()
       setForm({
-        monitoring_interval_minutes: res.data.monitoring_interval_minutes ?? 5,
+        monitoring_interval_seconds: res.data.monitoring_interval_seconds ?? 10,
         license_check_hour: res.data.license_check_hour ?? 2,
         smart_check_hour: res.data.smart_check_hour ?? 3,
       })
@@ -38,7 +38,7 @@ export default function Settings() {
     setOk(null)
     try {
       const payload = {
-        monitoring_interval_minutes: Math.max(1, Number(form.monitoring_interval_minutes) || 1),
+        monitoring_interval_seconds: Math.max(5, Number(form.monitoring_interval_seconds) || 10),
         license_check_hour: Math.max(0, Math.min(23, Number(form.license_check_hour) || 0)),
         smart_check_hour: Math.max(0, Math.min(23, Number(form.smart_check_hour) || 0)),
       }
@@ -69,11 +69,11 @@ export default function Settings() {
 
         <div className="p-6 grid md:grid-cols-3 gap-4">
           <Field
-            label="Monitoring Interval (minutes)"
+            label="Monitoring Interval (seconds)"
             type="number"
-            value={form.monitoring_interval_minutes}
-            min={1}
-            onChange={(v) => setForm({ ...form, monitoring_interval_minutes: v })}
+            value={form.monitoring_interval_seconds}
+            min={5}
+            onChange={(v) => setForm({ ...form, monitoring_interval_seconds: v })}
           />
           <Field
             label="License Check Hour (UTC)"

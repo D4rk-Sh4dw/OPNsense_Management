@@ -40,7 +40,11 @@ def _load_scheduler_values(db: Session) -> dict:
         db.refresh(row)
 
     env_seconds = int(settings.MONITORING_INTERVAL_SECONDS or 0)
-    if env_seconds > 0:
+    db_seconds = int(row.monitoring_interval_seconds or 0) if row else 0
+    if db_seconds > 0:
+        # DB value (set via Settings UI) has highest priority
+        monitoring_interval_seconds = max(5, db_seconds)
+    elif env_seconds > 0:
         monitoring_interval_seconds = max(5, env_seconds)
     else:
         legacy_minutes = int(row.monitoring_interval_minutes or settings.MONITORING_INTERVAL_MINUTES)

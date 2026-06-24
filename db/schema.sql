@@ -129,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_license_notif_sent ON license_notifications(sent_
 -- Global scheduler settings (singleton id=1)
 CREATE TABLE IF NOT EXISTS scheduler_settings (
     id INTEGER PRIMARY KEY,
+    monitoring_interval_seconds INTEGER DEFAULT 10,
     monitoring_interval_minutes INTEGER DEFAULT 5,
     license_check_hour INTEGER DEFAULT 2,
     smart_check_hour INTEGER DEFAULT 3,

@@ -132,6 +132,7 @@ class SchedulerSettings(Base):
     __tablename__ = "scheduler_settings"
 
     id = Column(Integer, primary_key=True, default=1)
+    monitoring_interval_seconds = Column(Integer, default=10)
     monitoring_interval_minutes = Column(Integer, default=5)
     license_check_hour = Column(Integer, default=2)
     smart_check_hour = Column(Integer, default=3)

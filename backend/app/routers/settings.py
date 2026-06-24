@@ -30,6 +30,8 @@ async def update_scheduler_settings(payload: SchedulerSettingsUpdate, db: Sessio
     row = _get_or_create_scheduler_settings(db)
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "monitoring_interval_seconds" in update_data:
+        row.monitoring_interval_seconds = max(5, int(update_data["monitoring_interval_seconds"]))
     if "monitoring_interval_minutes" in update_data:
         row.monitoring_interval_minutes = max(1, int(update_data["monitoring_interval_minutes"]))
     if "license_check_hour" in update_data:

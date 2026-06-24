@@ -300,6 +300,7 @@ class EmailPreviewResponse(BaseModel):
 
 
 class SchedulerSettingsResponse(BaseModel):
+    monitoring_interval_seconds: int = 10
     monitoring_interval_minutes: int
     license_check_hour: int
     smart_check_hour: int
@@ -310,6 +311,7 @@ class SchedulerSettingsResponse(BaseModel):
 
 
 class SchedulerSettingsUpdate(BaseModel):
+    monitoring_interval_seconds: Optional[int] = None
     monitoring_interval_minutes: Optional[int] = None
     license_check_hour: Optional[int] = None
     smart_check_hour: Optional[int] = None
