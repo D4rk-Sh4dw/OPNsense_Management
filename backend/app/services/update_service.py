@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import re
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models import Firewall, UpdateHistory, Alert, Backup
@@ -15,6 +16,31 @@ from app.services.opnsense_api import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_REQUEST_MARKER_RE = re.compile(r"\*\*\*GOT REQUEST TO ([^*]+?)\*\*\*", re.IGNORECASE)
+_DONE_MARKER = "***DONE***"
+_ERROR_MARKER = "***ERROR***"
+_REBOOT_MARKER = "***REBOOT***"
+_INSTALL_KINDS = ("update", "upgrade", "install", "fetch")
+_CHECK_KINDS = ("check",)
+
+
+def _classify_upgrade_log(log_text: str) -> dict:
+    """Inspect an OPNsense upgradestatus log tail to determine current job state."""
+    if not log_text:
+        return {"job_kind": None, "is_done": False, "is_error": False, "is_reboot": False}
+    matches = list(_REQUEST_MARKER_RE.finditer(log_text))
+    last_marker = matches[-1] if matches else None
+    last_marker_pos = last_marker.end() if last_marker else 0
+    tail = log_text[last_marker_pos:]
+    kind = last_marker.group(1).strip().lower() if last_marker else None
+    return {
+        "job_kind": kind,
+        "is_done": _DONE_MARKER in tail,
+        "is_error": _ERROR_MARKER in tail,
+        "is_reboot": _REBOOT_MARKER in tail,
+    }
 
 
 class UpdateService:
@@ -169,19 +195,24 @@ class UpdateService:
 
             update_record.log += f"; verify_status_after_trigger={verify_status}"
 
-            # Poll for completion. A new job is considered finished only if:
-            #   (a) we observed an in-progress state ("running"/"reboot"/...), OR
-            #   (b) the upgrade log content differs from the pre-trigger snapshot
-            # AND the status reports "done". This prevents the polling loop from
-            # accepting a stale "done" left over from a previous run.
+            # Poll for completion by parsing the upgradestatus log content.
+            # OPNsense's `status` field is unreliable (almost always "done" once
+            # any previous job finished). The log itself contains explicit
+            # markers we can match:
+            #   ***GOT REQUEST TO <ACTION>***  — start of a new job
+            #   ***DONE***                     — successful completion marker
+            #   ***ERROR***                    — failure marker
+            #   ***REBOOT***                   — reboot phase
+            # A run is considered successful only when the LAST "GOT REQUEST TO"
+            # marker references a real install (UPDATE/UPGRADE/INSTALL), NOT a
+            # plain CHECK, and is followed by ***DONE***.
             max_wait = 3600  # 1 hour
             poll_interval = 10
-            min_wait_before_done = 20  # do not accept "done" within the first 20s
             elapsed = 0
             completed = False
             saw_running = False
             last_log_snapshot = pre_log_snapshot
-            phase = action
+            last_kind = None
 
             while elapsed < max_wait:
                 try:
@@ -190,27 +221,47 @@ class UpdateService:
                     st_log = str(st.get("log", "") or "")
                     last_log_snapshot = st_log
 
-                    if st_value in ("running", "reboot", "upgrading", "installing"):
+                    info = _classify_upgrade_log(st_log)
+                    kind = info["job_kind"] or ""
+                    last_kind = kind
+
+                    if info["is_error"]:
+                        # Surface the tail of the log so the alert/email is useful.
+                        tail = st_log[-500:] if st_log else "(no log)"
+                        raise Exception(f"OPNsense reported upgrade ERROR marker: {tail}")
+
+                    # Treat any active install/upgrade job WITHOUT a DONE marker
+                    # yet as "running" — this includes the reboot phase.
+                    kind_is_install = any(k in kind for k in _INSTALL_KINDS)
+                    kind_is_check = any(k in kind for k in _CHECK_KINDS) and not kind_is_install
+
+                    if kind_is_install and not info["is_done"]:
                         saw_running = True
 
-                    if st_value == "done":
-                        log_changed = st_log and st_log != pre_log_snapshot
-                        fresh_completion = saw_running or log_changed
-                        if fresh_completion and elapsed >= min_wait_before_done:
-                            logger.info(
-                                f"Firmware job done on {firewall.hostname} "
-                                f"(action={action}, saw_running={saw_running}, "
-                                f"log_changed={bool(log_changed)})"
-                            )
-                            completed = True
-                            break
-                        # Otherwise keep polling — likely a stale "done" from a
-                        # previous run or we have not waited long enough yet.
+                    # Successful completion: latest marker is for an install/
+                    # upgrade job AND DONE marker is present after it.
+                    if kind_is_install and info["is_done"]:
+                        logger.info(
+                            f"Firmware job done on {firewall.hostname} "
+                            f"(kind={kind}, saw_running={saw_running}, "
+                            f"reboot_in_log={info['is_reboot']})"
+                        )
+                        completed = True
+                        break
 
-                    if st_value == "error":
-                        raise Exception(f"OPNsense reported upgrade error: {st.get('log', 'Unknown error')}")
+                    # If the latest marker is just a CHECK, configd hasn't
+                    # picked up our install job yet — keep waiting.
+                    if kind_is_check:
+                        logger.debug(
+                            f"upgradestatus shows CHECK job (kind={kind}); "
+                            f"waiting for install job to start on {firewall.hostname}"
+                        )
 
                 except Exception as e:
+                    # Re-raise ERROR-marker exceptions, but tolerate transient
+                    # API failures (e.g. during reboot).
+                    if "upgrade ERROR marker" in str(e):
+                        raise
                     logger.warning(f"upgradestatus check failed for {firewall.hostname}: {e}")
 
                 await asyncio.sleep(poll_interval)
@@ -220,7 +271,7 @@ class UpdateService:
                 raise Exception(
                     f"Firmware job did not complete within {max_wait}s "
                     f"(saw_running={saw_running}, action={action}, "
-                    f"log_changed={bool(last_log_snapshot and last_log_snapshot != pre_log_snapshot)})"
+                    f"last_kind={last_kind or 'none'})"
                 )
 
             # OPNsense reboots itself when the firmware job requires it
