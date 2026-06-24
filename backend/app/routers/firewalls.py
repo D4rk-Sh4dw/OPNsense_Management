@@ -365,6 +365,10 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
                 api = OPNsenseAPI(fw.ip, fw.api_key, api_secret, fw.verify_ssl, fw.ssl_cert_path)
                 # Override timeout to keep dashboard snappy even when one firewall is slow
                 api.timeout = 5
+
+                # Mark online only if a dedicated connectivity endpoint succeeds.
+                await api.get_system_information()
+
                 resources, activity = await asyncio.gather(
                     api.get_system_resources(),
                     api.get_activity(),
@@ -610,6 +614,10 @@ async def get_live_stats(
                 firewall.verify_ssl, firewall.ssl_cert_path,
             )
             api.timeout = 5
+
+            # Use a lightweight endpoint to determine reachability first.
+            await api.get_system_information()
+
             import asyncio
             resources, activity, tm = await asyncio.gather(
                 api.get_system_resources(),
