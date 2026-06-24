@@ -147,27 +147,79 @@ export default function GeoMap() {
                 position={[fw.location_lat, fw.location_lon]}
                 icon={iconForFirewall(fw)}
               >
-                <Popup minWidth={220}>
-                  <div className="text-sm">
-                    <div className="font-bold text-base mb-1">{fw.customer_name}</div>
-                    <div className="text-gray-500 mb-1">{fw.hostname}</div>
-                    <div className="text-gray-500 mb-2 text-xs">{fw.location_address}</div>
-                    {fw.online === true && fw.alerts?.length === 0 && (
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">Online ✓</span>
-                    )}
-                    {fw.online === false && (
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">Offline</span>
-                    )}
+                <Popup minWidth={280}>
+                  <div className="text-sm" style={{lineHeight:'1.5'}}>
+                    {/* Header */}
+                    <div className="font-bold text-base mb-0.5">{fw.customer_name}</div>
+                    <div className="text-gray-500 text-xs mb-2">{fw.hostname} &bull; {fw.ip}</div>
+                    {fw.location_address && <div className="text-gray-400 text-xs mb-2">📍 {fw.location_address}</div>}
+
+                    {/* Status row */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {fw.online === true && (
+                        <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">🟢 Online</span>
+                      )}
+                      {fw.online === false && (
+                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-semibold">🔴 Offline</span>
+                      )}
+                      {fw.online === null && (
+                        <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-semibold">⚪ Unbekannt</span>
+                      )}
+                      {fw.updates_available > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-semibold">⬆ {fw.updates_available} Update{fw.updates_available > 1 ? 's' : ''}</span>
+                      )}
+                      {fw.updates_available === 0 && fw.online && (
+                        <span className="px-2 py-0.5 rounded-full bg-green-50 text-green-600 text-xs">✓ Aktuell</span>
+                      )}
+                    </div>
+
+                    {/* Metrics */}
+                    <table style={{fontSize:'11px',width:'100%',borderCollapse:'collapse'}}>
+                      <tbody>
+                        {fw.firmware_version && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>Firmware</td><td style={{fontFamily:'monospace'}}>{fw.firmware_version}</td></tr>
+                        )}
+                        {fw.cpu_usage != null && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>CPU</td><td>{fw.cpu_usage.toFixed(1)} %</td></tr>
+                        )}
+                        {fw.ram_usage != null && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>RAM</td><td>{fw.ram_usage.toFixed(1)} %</td></tr>
+                        )}
+                        {fw.license_type && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>Lizenz</td><td style={{textTransform:'capitalize'}}>{fw.license_type}</td></tr>
+                        )}
+                        {fw.license_expiry && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>Ablauf</td><td>{new Date(fw.license_expiry).toLocaleDateString('de-DE')}</td></tr>
+                        )}
+                        {fw.last_backup && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>Backup</td><td>{new Date(fw.last_backup).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td></tr>
+                        )}
+                        {!fw.last_backup && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>Backup</td><td style={{color:'#ef4444'}}>Kein Backup</td></tr>
+                        )}
+                        {fw.checked_at && (
+                          <tr><td style={{color:'#6b7280',paddingRight:'8px'}}>Geprüft</td><td>{new Date(fw.checked_at).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+
+                    {/* Alerts */}
                     {fw.alerts?.length > 0 && (
                       <div className="mt-2 space-y-1">
+                        <div style={{fontSize:'10px',color:'#6b7280',textTransform:'uppercase',fontWeight:'600',marginBottom:'2px'}}>Offene Alerts</div>
                         {fw.alerts.map(a => (
-                          <div key={a.id} className={`text-xs px-2 py-1 rounded ${a.severity === 'critical' ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                          <div key={a.id} style={{
+                            fontSize:'11px',padding:'3px 6px',borderRadius:'4px',
+                            background: a.severity === 'critical' ? '#fef2f2' : a.severity === 'warning' ? '#fffbeb' : '#eff6ff',
+                            color: a.severity === 'critical' ? '#b91c1c' : a.severity === 'warning' ? '#92400e' : '#1e40af',
+                          }}>
                             <strong>{a.severity.toUpperCase()}:</strong> {a.message}
                           </div>
                         ))}
                       </div>
                     )}
-                    <div className="mt-2">
+
+                    <div style={{marginTop:'8px',borderTop:'1px solid #e5e7eb',paddingTop:'6px'}}>
                       <Link to={`/firewalls/${fw.id}`} className="text-indigo-600 text-xs font-semibold hover:underline">
                         → Details öffnen
                       </Link>

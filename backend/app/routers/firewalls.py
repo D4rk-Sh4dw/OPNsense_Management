@@ -49,6 +49,7 @@ router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
 @router.get("/map")
 async def get_map_data(db: Session = Depends(get_db)):
     """Return all firewalls with coordinates and latest alert state for the geomap."""
+    from app.models import Backup
     firewalls = db.query(Firewall).all()
     result = []
     for fw in firewalls:
@@ -64,6 +65,12 @@ async def get_map_data(db: Session = Depends(get_db)):
             .order_by(Alert.created_at.desc())
             .all()
         )
+        latest_backup = (
+            db.query(Backup)
+            .filter(Backup.firewall_id == fw.id)
+            .order_by(Backup.created_at.desc())
+            .first()
+        )
         result.append({
             "id": str(fw.id),
             "customer_name": fw.customer_name,
@@ -74,6 +81,13 @@ async def get_map_data(db: Session = Depends(get_db)):
             "location_lon": fw.location_lon,
             "online": latest_status.online if latest_status else None,
             "checked_at": latest_status.checked_at.isoformat() if latest_status and latest_status.checked_at else None,
+            "firmware_version": latest_status.firmware_version if latest_status else None,
+            "updates_available": latest_status.updates_available if latest_status else 0,
+            "cpu_usage": latest_status.cpu_usage if latest_status else None,
+            "ram_usage": latest_status.ram_usage if latest_status else None,
+            "license_type": fw.license_type,
+            "license_expiry": fw.license_expiry.isoformat() if fw.license_expiry else None,
+            "last_backup": latest_backup.created_at.isoformat() if latest_backup else None,
             "alerts": [
                 {
                     "id": str(a.id),
@@ -83,6 +97,8 @@ async def get_map_data(db: Session = Depends(get_db)):
                 }
                 for a in open_alerts
             ],
+        })
+    return result
         })
     return result
 
