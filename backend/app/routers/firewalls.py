@@ -99,8 +99,6 @@ async def get_map_data(db: Session = Depends(get_db)):
             ],
         })
     return result
-        })
-    return result
 
 
 @router.post("/{firewall_id}/geocode")
