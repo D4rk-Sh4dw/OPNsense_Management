@@ -114,7 +114,7 @@ def extract_needs_reboot(status: Dict[str, Any]) -> bool:
 def extract_license_type(status: Dict[str, Any]) -> Optional[str]:
     """Detect business/community edition from firmware status across variant payloads."""
     text_parts = []
-    for key in ("product_name", "product", "edition", "license", "license_type", "product_edition"):
+    for key in ("product_id", "product_name", "product", "edition", "license", "license_type", "product_edition"):
         value = status.get(key)
         if isinstance(value, str):
             text_parts.append(value)
@@ -221,9 +221,13 @@ _EXPIRY_KEYS = (
 )
 
 
-def extract_license_expiry(payload: Dict[str, Any]) -> Optional[datetime]:
-    """Best-effort license expiry extraction from arbitrary firmware/license payloads."""
-    if not isinstance(payload, dict):
+def extract_license_expiry(payload: Dict[str, Any], _depth: int = 0) -> Optional[datetime]:
+    """Best-effort license expiry extraction from arbitrary firmware/license payloads.
+
+    Walks nested dicts looking for any of the known expiry-like keys. Limited
+    recursion depth to avoid pathological payloads.
+    """
+    if not isinstance(payload, dict) or _depth > 6:
         return None
 
     for key in _EXPIRY_KEYS:
@@ -231,14 +235,17 @@ def extract_license_expiry(payload: Dict[str, Any]) -> Optional[datetime]:
         if parsed is not None:
             return parsed
 
-    for container_key in ("subscription", "license", "product", "info", "details"):
-        container = payload.get(container_key)
-        if isinstance(container, dict):
-            nested = extract_license_expiry(container)
+    # Recurse into any nested dict whose key name suggests license/subscription
+    # data (catches e.g. product.product_license.valid_to on OPNsense Business).
+    interesting_substrings = ("licen", "subscrip", "product", "info", "details", "support", "maintenance", "expir", "valid")
+    for key, value in payload.items():
+        key_lower = key.lower() if isinstance(key, str) else ""
+        if isinstance(value, dict) and any(s in key_lower for s in interesting_substrings):
+            nested = extract_license_expiry(value, _depth + 1)
             if nested is not None:
                 return nested
-        elif isinstance(container, str):
-            parsed = _parse_datelike(container)
+        elif isinstance(value, str) and any(s in key_lower for s in ("licen", "subscrip", "expir", "valid", "until", "support")):
+            parsed = _parse_datelike(value)
             if parsed is not None:
                 return parsed
 
