@@ -16,6 +16,13 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Fast connectivity checks run frequently. Require multiple consecutive failures
+# before flipping a previously online firewall to offline to avoid flapping on
+# transient WAN/read timeout spikes.
+_CONNECTIVITY_FAILURES: dict[str, int] = {}
+_CONNECTIVITY_FAIL_THRESHOLD = 3
+_CONNECTIVITY_RETRIES = 2
+
 
 def _open_alert(db: Session, firewall_id, alert_type: str):
     return db.query(Alert).filter(
@@ -274,20 +281,38 @@ class MonitoringService:
         )
         prev_online = prev.online if prev else None
 
-        try:
-            api_secret = EncryptionService.decrypt(firewall.api_secret)
-            api = OPNsenseAPI(
-                firewall.ip, firewall.api_key, api_secret,
-                firewall.verify_ssl, firewall.ssl_cert_path,
-            )
-            api.timeout = 5
-            await api.get_system_information()
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        # Slightly longer timeout than before to reduce false negatives.
+        api.timeout = 8
+
+        last_error = None
+        probe_ok = False
+        for _ in range(_CONNECTIVITY_RETRIES):
+            try:
+                await api.get_system_information()
+                probe_ok = True
+                break
+            except Exception as e:
+                last_error = e
+
+        fw_key = str(firewall.id)
+        if probe_ok:
             now_online = True
+            _CONNECTIVITY_FAILURES.pop(fw_key, None)
             firewall.last_seen = datetime.utcnow()
             firewall.last_sync_error = None
-        except Exception as e:
-            now_online = False
-            firewall.last_sync_error = str(e)
+        else:
+            consecutive_failures = _CONNECTIVITY_FAILURES.get(fw_key, 0) + 1
+            _CONNECTIVITY_FAILURES[fw_key] = consecutive_failures
+
+            # Keep a previously-online firewall online until threshold is reached.
+            should_mark_offline = prev_online is not True or consecutive_failures >= _CONNECTIVITY_FAIL_THRESHOLD
+            now_online = not should_mark_offline
+            firewall.last_sync_error = str(last_error) if last_error else "connectivity check failed"
 
         if prev is None:
             row = FirewallStatus(
