@@ -86,11 +86,34 @@ class UpdateService:
             status_before = await api_client.get_firmware_status()
             update_record.version_before = extract_firmware_version(status_before)
 
-            # Ensure update metadata is fresh before deciding which endpoint to call.
+            # Ensure update metadata is fresh before deciding which endpoint to
+            # call. firmware/check runs asynchronously on OPNsense: immediately
+            # after POSTing /firmware/check, /firmware/status may return a
+            # transitional payload with empty product_version / status fields
+            # until the check completes. We therefore poll briefly and only
+            # replace the original snapshot if a populated payload arrives.
             try:
                 await api_client.check_firmware_updates()
-                status_before = await api_client.get_firmware_status()
-                update_record.version_before = extract_firmware_version(status_before)
+                refreshed = None
+                for _ in range(10):  # up to ~20s
+                    await asyncio.sleep(2)
+                    try:
+                        candidate = await api_client.get_firmware_status()
+                    except Exception:
+                        continue
+                    if not isinstance(candidate, dict):
+                        continue
+                    cand_status = str(candidate.get("status", "")).lower()
+                    cand_version = extract_firmware_version(candidate)
+                    # Skip transitional states / empty payloads.
+                    if cand_status in ("busy", "running", "pending_check") and not cand_version:
+                        continue
+                    if cand_version:
+                        refreshed = candidate
+                        break
+                if isinstance(refreshed, dict):
+                    status_before = refreshed
+                    update_record.version_before = extract_firmware_version(status_before)
             except Exception as e:
                 logger.warning(f"firmware/check failed for {firewall.hostname}: {e}")
 
