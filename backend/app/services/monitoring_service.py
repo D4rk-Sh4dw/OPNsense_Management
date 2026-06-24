@@ -680,6 +680,7 @@ class MonitoringService:
                 "hostname": fw.hostname,
                 "ip": fw.ip,
                 "tags": fw.tags or [],
+                "license_type": fw.license_type,
                 "online": status.online if status else None,
                 "firmware_version": status.firmware_version if status else None,
                 "updates_available": status.updates_available if status else 0,

@@ -223,6 +223,7 @@ class FirewallQuickStatus(BaseModel):
     hostname: Optional[str] = None
     ip: str
     tags: Optional[List[str]] = []
+    license_type: Optional[str] = None
     online: Optional[bool] = None
     firmware_version: Optional[str] = None
     updates_available: int = 0

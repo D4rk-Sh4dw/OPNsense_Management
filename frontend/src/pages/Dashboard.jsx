@@ -320,6 +320,7 @@ export default function Dashboard() {
                 <th className="px-6 py-4 text-left text-sm font-semibold">IP Address</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Status</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Firmware</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Edition</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Updates</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Resources</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
@@ -360,6 +361,14 @@ export default function Dashboard() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-gray-700 dark:text-gray-300 text-sm">{fw.firmware_version || 'Unknown'}</td>
+                    <td className="px-6 py-4">
+                      {fw.license_type === 'business'
+                        ? <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs font-bold rounded-full">Business</span>
+                        : fw.license_type === 'community'
+                          ? <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-bold rounded-full">Community</span>
+                          : <span className="text-gray-400">—</span>
+                      }
+                    </td>
                     <td className="px-6 py-4">
                       {fw.updates_available > 0 ? (
                         <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 rounded-full text-xs font-bold">⚡ {fw.updates_available}</span>
@@ -427,7 +436,7 @@ export default function Dashboard() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="10" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan="11" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     {firewalls && firewalls.length > 0
                       ? 'No firewall matches your search.'
                       : 'No firewalls registered yet. Go to Firewalls tab to add one.'}
