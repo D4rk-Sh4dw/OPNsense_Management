@@ -223,6 +223,8 @@ class UpdateService:
                 # Ignore package revision suffixes (e.g. 26.4.1_3)
                 return re.sub(r"_\d+$", "", str(v).strip())
 
+            # Ensure product_latest is available before completion criteria are computed.
+            product_latest = extract_latest_firmware_version(status_before) or ""
             expected_target_version = _norm_version(product_latest) if product_latest else ""
             version_before_norm = _norm_version(update_record.version_before)
             target_requires_version_change = bool(
