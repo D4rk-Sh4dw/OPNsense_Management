@@ -119,7 +119,15 @@ class UpdateService:
 
             pending_count = extract_firmware_update_count(status_before)
             if pending_count <= 0:
-                raise Exception("No updates pending on firewall")
+                top_msg = ""
+                status_msg = ""
+                if isinstance(status_before, dict):
+                    top_msg = str(status_before.get("status", "")).strip()
+                    status_msg = str(status_before.get("status_msg", "")).strip()
+                raise Exception(
+                    f"No updates pending on firewall (status={top_msg or 'unknown'}, "
+                    f"status_msg={status_msg or 'none'})"
+                )
             pending_count_before = pending_count
 
             # Create pre-update backup
@@ -184,6 +192,7 @@ class UpdateService:
                         f"product_type={type(status_before.get('product')).__name__}; "
                         f"product_keys={sorted(status_before['product'].keys()) if isinstance(status_before.get('product'), dict) else 'n/a'}; "
                         f"raw_status={status_before.get('status')!r}; "
+                        f"raw_status_msg={status_before.get('status_msg')!r}; "
                         f"raw_status_upgrade_action={status_before.get('status_upgrade_action')!r}; "
                         f"raw_product_version={status_before.get('product_version')!r}; "
                         f"raw_product_latest={status_before.get('product_latest')!r}; "

@@ -44,7 +44,17 @@ def extract_firmware_update_count(status: Dict[str, Any]) -> int:
     Aggregates all signals (counters, package lists, upgrade sets, status_msg,
     version comparison, top-level "status" hint) and returns the maximum so an
     empty `upgrade_packages` array does not mask a non-empty `upgrade_sets`.
+
+    A top-level "status" of "none" is treated as a definitive "no updates" and
+    short-circuits all other heuristics — OPNsense reports this when the last
+    firmware/check found nothing pending, regardless of revision suffixes
+    (e.g. product_version="25.10.2_12" vs product_latest="25.10.2" only differ
+    by package iteration, not by a real upgrade).
     """
+    top_status_raw = status.get("status")
+    if isinstance(top_status_raw, str) and top_status_raw.strip().lower() == "none":
+        return 0
+
     candidates = [
         status.get("updates"),
         status.get("update_count"),
@@ -91,7 +101,11 @@ def extract_firmware_update_count(status: Dict[str, Any]) -> int:
 
     status_msg = status.get("status_msg")
     if isinstance(status_msg, str):
-        m = re.search(r"(\d+)\s+update", status_msg.lower())
+        # Explicit "up to date" wording overrides everything.
+        msg_lower = status_msg.lower()
+        if any(phrase in msg_lower for phrase in ("up to date", "up-to-date", "no updates", "no update available")):
+            return 0
+        m = re.search(r"(\d+)\s+update", msg_lower)
         if m:
             best = max(best, int(m.group(1)))
 
@@ -104,8 +118,13 @@ def extract_firmware_update_count(status: Dict[str, Any]) -> int:
     if best == 0:
         current_version = extract_firmware_version(status)
         latest_version = extract_latest_firmware_version(status)
-        if current_version and latest_version and current_version != latest_version:
-            best = 1
+        if current_version and latest_version:
+            # Strip OPNsense package-revision suffix (e.g. "_12") so
+            # "25.10.2_12" and "25.10.2" are considered the same release.
+            cur_norm = re.sub(r"_\d+$", "", current_version)
+            lat_norm = re.sub(r"_\d+$", "", latest_version)
+            if cur_norm != lat_norm:
+                best = 1
 
     return max(0, best)
 
