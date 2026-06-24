@@ -60,6 +60,18 @@ class UpdateService:
             status_before = await api_client.get_firmware_status()
             update_record.version_before = extract_firmware_version(status_before)
 
+            # Ensure update metadata is fresh before deciding which endpoint to call.
+            try:
+                await api_client.check_firmware_updates()
+                status_before = await api_client.get_firmware_status()
+                update_record.version_before = extract_firmware_version(status_before)
+            except Exception as e:
+                logger.warning(f"firmware/check failed for {firewall.hostname}: {e}")
+
+            pending_count = extract_firmware_update_count(status_before)
+            if pending_count <= 0:
+                raise Exception("No updates pending on firewall")
+
             # Create pre-update backup
             logger.info(f"Creating pre-update backup for {firewall.hostname}")
             try:
@@ -68,16 +80,27 @@ class UpdateService:
                 logger.warning(f"Pre-update backup failed: {e}")
                 # Continue with update anyway
 
-            # Trigger update
-            logger.info(f"Starting update on {firewall.hostname}")
-            update_response = await api_client.install_updates()
-            update_record.log = str(update_response)
+            # Trigger update/upgrade depending on payload shape.
+            is_upgrade_path = (
+                str(status_before.get("status", "")).lower() in ("upgrade", "major")
+                or bool(status_before.get("upgrade_sets"))
+            )
+            action = "upgrade" if is_upgrade_path else "update"
+            logger.info(f"Starting firmware {action} on {firewall.hostname}")
+
+            if is_upgrade_path:
+                update_response = await api_client.upgrade_firmware()
+            else:
+                update_response = await api_client.install_updates()
+
+            update_record.log = f"action={action}; response={update_response}"
 
             # Poll for completion
             max_wait = 3600  # 1 hour
             poll_interval = 10
             elapsed = 0
 
+            completed = False
             while elapsed < max_wait:
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
@@ -86,11 +109,45 @@ class UpdateService:
                     status = await api_client.get_upgrade_status()
                     if status.get("status") == "done":
                         logger.info(f"Update completed on {firewall.hostname}")
+                        completed = True
                         break
                     elif status.get("status") == "error":
                         raise Exception(f"Update error: {status.get('log', 'Unknown error')}")
                 except Exception as e:
                     logger.warning(f"Status check failed: {e}")
+
+            # Fallback once: some installations require the other endpoint.
+            if not completed:
+                logger.warning(
+                    f"No completion detected for {firewall.hostname} after {max_wait}s, trying fallback action"
+                )
+                fallback_action = "update" if action == "upgrade" else "upgrade"
+                try:
+                    if fallback_action == "upgrade":
+                        fallback_response = await api_client.upgrade_firmware()
+                    else:
+                        fallback_response = await api_client.install_updates()
+                    update_record.log = f"{update_record.log}; fallback_action={fallback_action}; fallback_response={fallback_response}"
+                except Exception as e:
+                    logger.warning(f"Fallback {fallback_action} start failed on {firewall.hostname}: {e}")
+
+                elapsed = 0
+                while elapsed < max_wait:
+                    await asyncio.sleep(poll_interval)
+                    elapsed += poll_interval
+                    try:
+                        status = await api_client.get_upgrade_status()
+                        if status.get("status") == "done":
+                            logger.info(f"Update completed after fallback on {firewall.hostname}")
+                            completed = True
+                            break
+                        elif status.get("status") == "error":
+                            raise Exception(f"Update error after fallback: {status.get('log', 'Unknown error')}")
+                    except Exception as e:
+                        logger.warning(f"Status check after fallback failed: {e}")
+
+            if not completed:
+                raise Exception("Firmware job did not complete within timeout")
 
             # Check if reboot needed
             status_after = await api_client.get_firmware_status()

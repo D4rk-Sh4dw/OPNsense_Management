@@ -417,6 +417,10 @@ class OPNsenseAPI:
         """POST /api/core/firmware/update"""
         return await self._request("POST", "/core/firmware/update")
 
+    async def upgrade_firmware(self) -> Dict[str, Any]:
+        """POST /api/core/firmware/upgrade (major release upgrade path)."""
+        return await self._request("POST", "/core/firmware/upgrade")
+
     async def get_upgrade_status(self) -> Dict[str, Any]:
         """GET /api/core/firmware/upgradestatus"""
         return await self._request("GET", "/core/firmware/upgradestatus")
