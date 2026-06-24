@@ -117,7 +117,11 @@ export default function Firewalls() {
     setSubmitting(true)
     try {
       // ip field holds the URL/hostname of the firewall
-      await firewallsAPI.create(formData)
+      const payload = { ...formData }
+      if (payload.license_expiry && !payload.license_expiry.includes('T')) {
+        payload.license_expiry = payload.license_expiry + 'T00:00:00'
+      }
+      await firewallsAPI.create(payload)
       setFormData(EMPTY_FORM)
       setShowAddForm(false)
       await loadFirewalls()

@@ -332,6 +332,9 @@ export default function FirewallDetail() {
       payload.tags = typeof payload.tags === 'string'
         ? payload.tags.split(',').map(t => t.trim()).filter(Boolean)
         : (payload.tags || [])
+      if (payload.license_expiry && !payload.license_expiry.includes('T')) {
+        payload.license_expiry = payload.license_expiry + 'T00:00:00'
+      }
 
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null })
       await firewallsAPI.update(id, payload)
