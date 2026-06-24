@@ -117,6 +117,42 @@ class UpdateService:
             except Exception as e:
                 logger.warning(f"firmware/check failed for {firewall.hostname}: {e}")
 
+            # Also fetch /firmware/info — on Business / for major release
+            # upgrades, /firmware/status often returns status='none' even
+            # when a major release (e.g. 26.x) is available, because that
+            # info lives in /firmware/info (with fields like upgrade_major_*).
+            # Merge non-empty info fields into status_before so the target
+            # selector can see them.
+            firmware_info: dict = {}
+            try:
+                firmware_info = await api_client.get_firmware_info() or {}
+                if isinstance(firmware_info, dict):
+                    try:
+                        logger.info(
+                            f"firmware/info payload for {firewall.hostname}: "
+                            f"top_level_keys={sorted(firmware_info.keys())}; "
+                            f"raw_status={firmware_info.get('status')!r}; "
+                            f"raw_status_msg={firmware_info.get('status_msg')!r}; "
+                            f"raw_status_upgrade_action={firmware_info.get('status_upgrade_action')!r}; "
+                            f"raw_product_version={firmware_info.get('product_version')!r}; "
+                            f"raw_product_latest={firmware_info.get('product_latest')!r}; "
+                            f"raw_upgrade_major_version={firmware_info.get('upgrade_major_version')!r}; "
+                            f"raw_upgrade_major_message={firmware_info.get('upgrade_major_message')!r}; "
+                            f"raw_upgrade_packages_type={type(firmware_info.get('upgrade_packages')).__name__}; "
+                            f"raw_upgrade_sets_type={type(firmware_info.get('upgrade_sets')).__name__}"
+                        )
+                    except Exception:
+                        pass
+                    if isinstance(status_before, dict):
+                        for k, v in firmware_info.items():
+                            existing = status_before.get(k)
+                            if existing in (None, "", "none") and v not in (None, "", "none"):
+                                status_before[k] = v
+                    else:
+                        status_before = firmware_info
+            except Exception as e:
+                logger.warning(f"firmware/info failed for {firewall.hostname}: {e}")
+
             pending_count = extract_firmware_update_count(status_before)
             if pending_count <= 0:
                 top_msg = ""
