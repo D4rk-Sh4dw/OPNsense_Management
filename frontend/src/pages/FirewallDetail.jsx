@@ -17,6 +17,7 @@ export default function FirewallDetail() {
   const [loadingUpdate, setLoadingUpdate] = useState(false)
   const [loadingCheck, setLoadingCheck] = useState(false)
   const [loadingReboot, setLoadingReboot] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [liveStats, setLiveStats] = useState(null)
   const [liveServices, setLiveServices] = useState(null)
@@ -241,8 +242,11 @@ export default function FirewallDetail() {
     setLoadingCheck(true)
     try {
       const res = await updatesAPI.checkUpdates(id)
-      const n = res.data?.updates_available ?? 0
-      showToast(n > 0 ? `${n} update(s) available` : 'Firewall is up to date')
+      const data = res.data || {}
+      const n = data.updates_available ?? 0
+      setUpdateInfo(data)
+      const extra = data.status_msg ? ` (${data.status_msg.replace(/<[^>]+>/g, '').slice(0, 120)})` : ''
+      showToast(n > 0 ? `${n} update(s) available${extra}` : 'Firewall is up to date')
       loadAll()
     } catch (e) {
       showToast('Update check failed: ' + (e.response?.data?.detail || e.message), false)
@@ -383,12 +387,16 @@ export default function FirewallDetail() {
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 font-semibold">
             {loadingCheck ? '...' : '🔎 Check Updates'}
           </button>
-          {status?.updates_available > 0 && (
-            <button onClick={handleInstallUpdates} disabled={loadingUpdate}
-              className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition disabled:opacity-50 font-semibold">
-              {loadingUpdate ? '...' : `⚡ Install ${status.updates_available} Update(s)`}
-            </button>
-          )}
+          {(() => {
+            const n = updateInfo?.updates_available ?? status?.updates_available ?? 0
+            if (n <= 0) return null
+            return (
+              <button onClick={handleInstallUpdates} disabled={loadingUpdate}
+                className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition disabled:opacity-50 font-semibold">
+                {loadingUpdate ? '...' : `⚡ Install ${n} Update(s)`}
+              </button>
+            )
+          })()}
           <button onClick={handleReboot} disabled={loadingReboot}
             className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition disabled:opacity-50 font-semibold">
             {loadingReboot ? '...' : '⏻ Reboot'}

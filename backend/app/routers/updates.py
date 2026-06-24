@@ -1,9 +1,10 @@
 import logging
 from typing import List
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
-from app.models import Firewall, Alert, UpdateHistory
+from app.models import Firewall, Alert, UpdateHistory, FirewallStatus
 from app.schemas import UpdateHistoryResponse
 from app.services.update_service import UpdateService
 from app.services.opnsense_api import (
@@ -50,16 +51,38 @@ async def check_updates(
             firewall.ip, firewall.api_key, api_secret,
             firewall.verify_ssl, firewall.ssl_cert_path
         )
-        # Trigger fresh check then fetch status
+        # Trigger fresh check then fetch status — identical to the scheduler path
+        # in MonitoringService.check_firewall_health for consistent results.
         try:
             await api.check_firmware_updates()
         except Exception:
             pass  # check endpoint may not always return JSON
         status = await api.get_firmware_status()
+
+        updates_count = extract_firmware_update_count(status)
+        current_version = extract_firmware_version(status)
+
+        # Persist into FirewallStatus so the dashboard reflects the freshly
+        # detected count immediately (without waiting for the next scheduler tick).
+        latest = (
+            db.query(FirewallStatus)
+            .filter(FirewallStatus.firewall_id == firewall.id)
+            .order_by(FirewallStatus.checked_at.desc())
+            .first()
+        )
+        if latest is None:
+            latest = FirewallStatus(firewall_id=firewall.id)
+            db.add(latest)
+        latest.updates_available = updates_count
+        if current_version:
+            latest.firmware_version = current_version
+        latest.checked_at = datetime.utcnow()
+        db.commit()
+
         return {
             "firewall_id": firewall_id,
-            "updates_available": extract_firmware_update_count(status),
-            "current_version": extract_firmware_version(status),
+            "updates_available": updates_count,
+            "current_version": current_version,
             "latest_version": extract_latest_firmware_version(status),
             "download_size": status.get("download_size"),
             "needs_reboot": extract_needs_reboot(status),
