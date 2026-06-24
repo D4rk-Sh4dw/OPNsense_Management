@@ -217,6 +217,18 @@ class UpdateService:
                 return update_record
             pending_count_before = pending_count
 
+            def _norm_version(v: str | None) -> str:
+                if not v:
+                    return ""
+                # Ignore package revision suffixes (e.g. 26.4.1_3)
+                return re.sub(r"_\d+$", "", str(v).strip())
+
+            expected_target_version = _norm_version(product_latest) if product_latest else ""
+            version_before_norm = _norm_version(update_record.version_before)
+            target_requires_version_change = bool(
+                expected_target_version and version_before_norm and expected_target_version != version_before_norm
+            )
+
             # Create pre-update backup
             logger.info(f"Creating pre-update backup for {firewall.hostname}")
             try:
@@ -456,10 +468,11 @@ class UpdateService:
                     last_observed_version = version_now or last_observed_version
                     last_observed_pending = pending_now
 
+                    version_now_norm = _norm_version(version_now)
                     version_changed = bool(
                         version_now
                         and update_record.version_before
-                        and version_now != update_record.version_before
+                        and version_now_norm != version_before_norm
                     )
                     pending_cleared = (
                         pending_now == 0
@@ -468,12 +481,23 @@ class UpdateService:
                         and elapsed >= min_wait_before_done
                     )
 
-                    if version_changed or pending_cleared:
+                    reached_expected_target = bool(
+                        expected_target_version and version_now_norm and version_now_norm == expected_target_version
+                    )
+
+                    completion_ok = (
+                        reached_expected_target
+                        or (version_changed and not target_requires_version_change)
+                        or (pending_cleared and not target_requires_version_change)
+                    )
+
+                    if completion_ok:
                         logger.info(
                             f"Update completed on {firewall.hostname}: "
                             f"version {update_record.version_before} -> {version_now}, "
                             f"pending {pending_count_before} -> {pending_now} "
-                            f"(version_changed={version_changed}, pending_cleared={pending_cleared})"
+                            f"(version_changed={version_changed}, pending_cleared={pending_cleared}, "
+                            f"target={expected_target_version or 'n/a'}, reached_target={reached_expected_target})"
                         )
                         completed = True
                         # Refresh the pending count from OPNsense before the

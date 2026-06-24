@@ -388,15 +388,10 @@ class MonitoringService:
             status.online = True
             firewall.last_seen = datetime.utcnow()
 
-            # Firmware status — trigger a fresh repo check first so upgrade_sets /
-            # status_msg are populated; otherwise OPNsense returns a stale (often
-            # empty) snapshot when the GUI has not been opened recently.
+            # Firmware status (read-only): avoid triggering firmware/check during
+            # periodic health monitoring to keep load low on OPNsense.
             await _asyncio.sleep(1)
             try:
-                try:
-                    await api_client.check_firmware_updates()
-                except Exception as e:
-                    logger.debug(f"firmware/check skipped for {firewall.hostname}: {e}")
                 fw_status = await api_client.get_firmware_status()
                 try:
                     fw_info = await api_client.get_firmware_info()
