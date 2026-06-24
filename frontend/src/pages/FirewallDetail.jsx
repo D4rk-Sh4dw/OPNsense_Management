@@ -15,7 +15,7 @@ export default function FirewallDetail() {
   const [loadingLicense, setLoadingLicense] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [loadingServices, setLoadingServices] = useState(false)
-  const [restartingService, setRestartingService] = useState(null)
+  const [serviceAction, setServiceAction] = useState(null)
   const [loadingUpdate, setLoadingUpdate] = useState(false)
   const [loadingCheck, setLoadingCheck] = useState(false)
   const [loadingReboot, setLoadingReboot] = useState(false)
@@ -132,7 +132,7 @@ export default function FirewallDetail() {
   const handleRestartService = async (service) => {
     const serviceName = service.description || service.name || service.service_id
     if (!window.confirm(`Dienst wirklich neu starten?\n\n${serviceName}`)) return
-    setRestartingService(service.service_id || service.name)
+    setServiceAction(`restart:${service.service_id || service.name}`)
     try {
       await firewallsAPI.restartService(id, {
         service_id: service.service_id,
@@ -143,7 +143,25 @@ export default function FirewallDetail() {
     } catch (e) {
       showToast(`Restart fehlgeschlagen: ${e.response?.data?.detail || e.message}`, false)
     } finally {
-      setRestartingService(null)
+      setServiceAction(null)
+    }
+  }
+
+  const handleStartService = async (service) => {
+    const serviceName = service.description || service.name || service.service_id
+    if (!window.confirm(`Dienst wirklich starten?\n\n${serviceName}`)) return
+    setServiceAction(`start:${service.service_id || service.name}`)
+    try {
+      await firewallsAPI.startService(id, {
+        service_id: service.service_id,
+        name: service.name,
+      })
+      showToast(`Start gestartet: ${serviceName}`)
+      await loadServices()
+    } catch (e) {
+      showToast(`Start fehlgeschlagen: ${e.response?.data?.detail || e.message}`, false)
+    } finally {
+      setServiceAction(null)
     }
   }
 
@@ -435,8 +453,9 @@ export default function FirewallDetail() {
         hasStatus={!!status}
         loading={loadingServices}
         onRefresh={loadServices}
+        onStart={handleStartService}
         onRestart={handleRestartService}
-        restartingService={restartingService}
+        serviceAction={serviceAction}
       />
 
       {/* Live Logs */}
@@ -720,7 +739,9 @@ function GatewayStatusCard({ data }) {
   )
 }
 
-function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRefresh, onRestart, restartingService }) {
+function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRefresh, onStart, onRestart, serviceAction }) {
+  const [search, setSearch] = useState('')
+
   const rows = useMemo(() => {
     const detailed = Array.isArray(services) ? services : []
     if (detailed.length > 0) return detailed
@@ -746,6 +767,15 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
       return acc
     }, { total: 0, enabled: 0, running: 0, errors: 0 })
   }, [rows])
+
+  const filteredRows = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle) return rows
+    return rows.filter((svc) => {
+      const haystack = `${svc.service_id || ''} ${svc.name || ''} ${svc.description || ''} ${svc.status || ''}`.toLowerCase()
+      return haystack.includes(needle)
+    })
+  }, [rows, search])
 
   const highlightedRows = useMemo(() => {
     const keywords = ['wireguard', 'unbound', 'paketfilter', 'filter', 'cron', 'gateway', 'ntp', 'ssh', 'web', 'routing', 'acme', 'dyndns']
@@ -794,7 +824,21 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
         </div>
       </div>
 
-      {highlightedRows.length > 0 && (
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Dienst suchen, z.B. unbound, wireguard, filter ..."
+          className="w-full max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600"
+        />
+        {search && (
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+            {filteredRows.length} Treffer
+          </span>
+        )}
+      </div>
+
+      {highlightedRows.length > 0 && !search && (
         <div className="mb-4 flex flex-wrap gap-2">
           {highlightedRows.map((svc) => (
             <span key={`highlight-${svc.name}`} className={`px-2 py-1 rounded-full text-xs font-semibold ${runningBadge(svc)}`}>
@@ -810,6 +854,10 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
             ? 'Noch keine Dienstedetails vorhanden. Bitte auf "Aktualisieren" klicken. Falls weiterhin nichts erscheint, den Backend-Container nach dem Update neu starten.'
             : 'Es liegt noch kein Health-Check vor. Du kannst trotzdem auf "Aktualisieren" klicken, um die Diensteliste live vom Firewall-API zu laden.'}
         </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-5 text-sm text-gray-600 dark:text-gray-400">
+          Keine Dienste passend zur Suche gefunden.
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -820,11 +868,11 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
                 <th className="py-2 pr-4">Enabled</th>
                 <th className="py-2 pr-4">State</th>
                 <th className="py-2 pr-4">Source Status</th>
-                <th className="py-2 pr-4">Action</th>
+                <th className="py-2 pr-4">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((svc) => (
+              {filteredRows.map((svc) => (
                 <tr key={svc.service_id || svc.name} className="border-b hover:bg-gray-50 dark:hover:bg-gray-900/50">
                   <td className="py-3 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{svc.name}</td>
                   <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{svc.description || '—'}</td>
@@ -836,13 +884,22 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
                   </td>
                   <td className="py-3 pr-4 text-xs font-mono text-gray-500 dark:text-gray-400">{svc.status || '—'}</td>
                   <td className="py-3 pr-4">
-                    <button
-                      onClick={() => onRestart(svc)}
-                      disabled={!onRestart || restartingService === (svc.service_id || svc.name)}
-                      className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition disabled:opacity-50"
-                    >
-                      {restartingService === (svc.service_id || svc.name) ? 'Restart...' : 'Restart'}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => onStart(svc)}
+                        disabled={!onStart || serviceAction === `start:${svc.service_id || svc.name}`}
+                        className="px-3 py-1 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition disabled:opacity-50"
+                      >
+                        {serviceAction === `start:${svc.service_id || svc.name}` ? 'Start...' : 'Start'}
+                      </button>
+                      <button
+                        onClick={() => onRestart(svc)}
+                        disabled={!onRestart || serviceAction === `restart:${svc.service_id || svc.name}`}
+                        className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition disabled:opacity-50"
+                      >
+                        {serviceAction === `restart:${svc.service_id || svc.name}` ? 'Restart...' : 'Restart'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -28,6 +28,7 @@ export const firewallsAPI = {
   getSmart: (id) => api.get(`/firewalls/${id}/smart`),
   getLiveStats: (id) => api.get(`/firewalls/${id}/live-stats`),
   getServices: (id) => api.get(`/firewalls/${id}/services`),
+  startService: (id, payload) => api.post(`/firewalls/${id}/services/start`, payload),
   restartService: (id, payload) => api.post(`/firewalls/${id}/services/restart`, payload),
   reboot: (id) => api.post(`/firewalls/${id}/reboot`),
   updateApiSecret: (id, apiSecret) =>

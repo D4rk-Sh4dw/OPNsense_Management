@@ -497,6 +497,34 @@ async def restart_firewall_service(
         raise HTTPException(status_code=502, detail=f"Could not restart service {identifier}: {e}")
 
 
+@router.post("/{firewall_id}/services/start")
+async def start_firewall_service(
+    firewall_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    """Start a single OPNsense service by id/name from the live service list."""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    identifier = payload.get("service_id") or payload.get("name")
+    if not identifier:
+        raise HTTPException(status_code=400, detail="service_id or name is required")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        api.timeout = 15
+        result = await api.start_service(str(identifier))
+        return {"message": f"Start requested for {identifier}", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not start service {identifier}: {e}")
+
+
 @router.post("/{firewall_id}/reboot")
 async def reboot_firewall(
     firewall_id: str,

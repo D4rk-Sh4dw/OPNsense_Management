@@ -219,6 +219,27 @@ class OPNsenseAPI:
             raise last_error
         return {"status": "unknown"}
 
+    async def start_service(self, identifier: str) -> Dict[str, Any]:
+        """Start a service via OPNsense core/service endpoints."""
+        last_error = None
+        candidates = [
+            ("POST", f"/core/service/start/{identifier}", None),
+            ("POST", "/core/service/start", {"service": identifier}),
+            ("POST", "/core/service/start", {"name": identifier}),
+            ("POST", f"/core/service/reconfigure/{identifier}", None),
+            ("POST", "/core/service/reconfigure", {"service": identifier}),
+        ]
+        for method, endpoint, payload in candidates:
+            try:
+                kwargs = {"json": payload} if payload is not None else {}
+                return await self._request(method, endpoint, **kwargs)
+            except Exception as e:
+                last_error = e
+                continue
+        if last_error:
+            raise last_error
+        return {"status": "unknown"}
+
     async def get_arp_table(self) -> Dict[str, Any]:
         """GET /api/diagnostics/interface/getArp"""
         return await self._request("GET", "/diagnostics/interface/getArp")
