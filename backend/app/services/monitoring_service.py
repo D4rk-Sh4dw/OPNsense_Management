@@ -347,6 +347,8 @@ class MonitoringService:
                 firewall.ssl_cert_path,
             )
 
+            import asyncio as _asyncio
+
             # Connectivity check via a cheap call
             await api_client.get_system_information()
             status.online = True
@@ -355,6 +357,7 @@ class MonitoringService:
             # Firmware status — trigger a fresh repo check first so upgrade_sets /
             # status_msg are populated; otherwise OPNsense returns a stale (often
             # empty) snapshot when the GUI has not been opened recently.
+            await _asyncio.sleep(1)
             try:
                 try:
                     await api_client.check_firmware_updates()
@@ -372,6 +375,7 @@ class MonitoringService:
                 logger.warning(f"Firmware status failed for {firewall.hostname}: {e}")
 
             # RAM via systemResources
+            await _asyncio.sleep(1)
             try:
                 resources = await api_client.get_system_resources()
                 status.ram_usage = _parse_memory(resources)
@@ -379,6 +383,7 @@ class MonitoringService:
                 logger.warning(f"systemResources failed for {firewall.hostname}: {e}")
 
             # CPU via activity (top output)
+            await _asyncio.sleep(1)
             try:
                 activity = await api_client.get_activity()
                 status.cpu_usage = _parse_cpu_from_activity(activity)
@@ -386,6 +391,7 @@ class MonitoringService:
                 logger.warning(f"getActivity failed for {firewall.hostname}: {e}")
 
             # Uptime via systemTime
+            await _asyncio.sleep(1)
             try:
                 tm = await api_client.get_system_time()
                 status.uptime_seconds = _parse_uptime(tm)
@@ -393,6 +399,7 @@ class MonitoringService:
                 logger.warning(f"systemTime failed for {firewall.hostname}: {e}")
 
             # Gateway status
+            await _asyncio.sleep(1)
             try:
                 gw_status = await api_client.get_gateway_status()
                 status.gateway_status = gw_status
@@ -400,6 +407,7 @@ class MonitoringService:
                 logger.warning(f"Gateway status failed for {firewall.hostname}: {e}")
 
             # Service status
+            await _asyncio.sleep(1)
             try:
                 services = await api_client.get_services_status()
                 rows = services.get("rows", []) if isinstance(services, dict) else []
