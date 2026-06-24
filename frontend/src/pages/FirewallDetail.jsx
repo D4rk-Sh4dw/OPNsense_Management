@@ -14,11 +14,13 @@ export default function FirewallDetail() {
   const [loadingSmart, setLoadingSmart] = useState(false)
   const [loadingLicense, setLoadingLicense] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
+  const [loadingServices, setLoadingServices] = useState(false)
   const [loadingUpdate, setLoadingUpdate] = useState(false)
   const [loadingCheck, setLoadingCheck] = useState(false)
   const [loadingReboot, setLoadingReboot] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [liveStats, setLiveStats] = useState(null)
+  const [liveServices, setLiveServices] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [savingEdit, setSavingEdit] = useState(false)
@@ -85,6 +87,7 @@ export default function FirewallDetail() {
       ])
       setFirewall(fwRes.data)
       setStatus(stRes.data)
+      loadServices()
       setError(null)
       loadSmart()
     } catch (e) {
@@ -103,6 +106,18 @@ export default function FirewallDetail() {
       setSmart({ available: false, reason: 'unavailable', devices: [] })
     } finally {
       setLoadingSmart(false)
+    }
+  }
+
+  const loadServices = async () => {
+    setLoadingServices(true)
+    try {
+      const res = await firewallsAPI.getServices(id)
+      setLiveServices(res.data)
+    } catch (e) {
+      setLiveServices(null)
+    } finally {
+      setLoadingServices(false)
     }
   }
 
@@ -270,8 +285,16 @@ export default function FirewallDetail() {
     ? 'bg-blue-100 text-blue-800'
     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
 
-  const serviceRows = Array.isArray(status?.services_status) ? status.services_status : []
-  const pendingServices = Array.isArray(status?.pending_services) ? status.pending_services : []
+  const serviceRows = Array.isArray(liveServices?.services)
+    ? liveServices.services
+    : Array.isArray(status?.services_status)
+    ? status.services_status
+    : []
+  const pendingServices = Array.isArray(liveServices?.pending_services)
+    ? liveServices.pending_services
+    : Array.isArray(status?.pending_services)
+    ? status.pending_services
+    : []
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -380,7 +403,13 @@ export default function FirewallDetail() {
       {status?.gateway_status && <GatewayStatusCard data={status.gateway_status} />}
 
       {/* Service Status */}
-      <ServiceStatusCard services={serviceRows} pendingServices={pendingServices} hasStatus={!!status} />
+      <ServiceStatusCard
+        services={serviceRows}
+        pendingServices={pendingServices}
+        hasStatus={!!status}
+        loading={loadingServices}
+        onRefresh={loadServices}
+      />
 
       {/* Live Logs */}
       <LiveLogsCard
@@ -663,7 +692,7 @@ function GatewayStatusCard({ data }) {
   )
 }
 
-function ServiceStatusCard({ services, pendingServices, hasStatus }) {
+function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRefresh }) {
   const rows = useMemo(() => {
     const detailed = Array.isArray(services) ? services : []
     if (detailed.length > 0) return detailed
@@ -687,6 +716,14 @@ function ServiceStatusCard({ services, pendingServices, hasStatus }) {
       if (svc.has_error) acc.errors += 1
       return acc
     }, { total: 0, enabled: 0, running: 0, errors: 0 })
+  }, [rows])
+
+  const highlightedRows = useMemo(() => {
+    const keywords = ['wireguard', 'unbound', 'paketfilter', 'filter', 'cron', 'gateway', 'ntp', 'ssh', 'web', 'routing', 'acme', 'dyndns']
+    return rows.filter((svc) => {
+      const haystack = `${svc.name || ''} ${svc.description || ''}`.toLowerCase()
+      return keywords.some((keyword) => haystack.includes(keyword))
+    })
   }, [rows])
 
   const enabledLabel = (enabled) => {
@@ -714,21 +751,35 @@ function ServiceStatusCard({ services, pendingServices, hasStatus }) {
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Service Status</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Aktiviert, Laufstatus und erkannte Fehler je Dienst.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Live aus der OPNsense-Diensteliste, z.B. Unbound, Paketfilter, Cron und WireGuard-Instanzen.</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs font-bold">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
           <span className="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">Total {summary.total}</span>
           <span className="px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">Enabled {summary.enabled}</span>
           <span className="px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">Running {summary.running}</span>
           <span className="px-3 py-1 rounded-full bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200">Errors {summary.errors}</span>
+          <button onClick={onRefresh} disabled={loading}
+            className="px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition disabled:opacity-50">
+            {loading ? 'Lade...' : 'Aktualisieren'}
+          </button>
         </div>
       </div>
+
+      {highlightedRows.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {highlightedRows.map((svc) => (
+            <span key={`highlight-${svc.name}`} className={`px-2 py-1 rounded-full text-xs font-semibold ${runningBadge(svc)}`}>
+              {svc.description || svc.name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-5 text-sm text-gray-600 dark:text-gray-400">
           {hasStatus
-            ? 'Noch keine Dienstedetails vorhanden. Bitte einmal "Check Health" ausführen. Falls weiterhin nichts erscheint, den Backend-Container nach dem Update neu starten.'
-            : 'Es liegt noch kein Health-Check vor. Bitte einmal "Check Health" ausführen, damit der Dienstestatus geladen werden kann.'}
+            ? 'Noch keine Dienstedetails vorhanden. Bitte auf "Aktualisieren" klicken. Falls weiterhin nichts erscheint, den Backend-Container nach dem Update neu starten.'
+            : 'Es liegt noch kein Health-Check vor. Du kannst trotzdem auf "Aktualisieren" klicken, um die Diensteliste live vom Firewall-API zu laden.'}
         </div>
       ) : (
         <div className="overflow-x-auto">

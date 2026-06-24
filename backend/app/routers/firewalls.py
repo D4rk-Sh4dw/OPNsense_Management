@@ -432,6 +432,43 @@ async def get_live_stats(
     return await LIVE_CACHE.get_or_fetch(f"detail:{firewall_id}", lambda: bounded(_fetch))
 
 
+@router.get("/{firewall_id}/services")
+async def get_firewall_services(
+    firewall_id: str,
+    db: Session = Depends(get_db),
+):
+    """Fetch live service status directly from OPNsense.
+
+    This is used by the detail view to show the same service list the OPNsense
+    UI exposes (for example Unbound, Paketfilter, WireGuard instances, Cron).
+    """
+    from app.services.monitoring_service import _parse_services
+
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        api.timeout = 8
+        raw = await api.get_services_status()
+        rows = raw.get("rows", []) if isinstance(raw, dict) else []
+        return {
+            "services": _parse_services(rows),
+            "pending_services": [
+                svc["name"] for svc in _parse_services(rows)
+                if svc.get("enabled") is True and svc.get("running") is False
+            ],
+            "raw_count": len(rows),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not fetch services: {e}")
+
+
 @router.post("/{firewall_id}/reboot")
 async def reboot_firewall(
     firewall_id: str,

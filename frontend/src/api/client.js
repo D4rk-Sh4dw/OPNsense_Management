@@ -27,6 +27,7 @@ export const firewallsAPI = {
     api.get(`/firewalls/${id}/logs`, { params: { log_type: logType, limit } }),
   getSmart: (id) => api.get(`/firewalls/${id}/smart`),
   getLiveStats: (id) => api.get(`/firewalls/${id}/live-stats`),
+  getServices: (id) => api.get(`/firewalls/${id}/services`),
   reboot: (id) => api.post(`/firewalls/${id}/reboot`),
   updateApiSecret: (id, apiSecret) =>
     api.post(`/firewalls/${id}/update-api-secret`, { api_secret: apiSecret }),
