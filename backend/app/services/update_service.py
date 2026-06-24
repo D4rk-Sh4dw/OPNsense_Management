@@ -166,16 +166,55 @@ class UpdateService:
                 logger.warning(f"firmware/info failed for {firewall.hostname}: {e}")
 
             pending_count = extract_firmware_update_count(status_before)
+
+            # Some OPNsense payloads report status='none' even when major
+            # upgrade metadata exists (e.g. upgrade_major_version/upgrade_sets).
+            # Treat those signals as authoritative and continue.
+            def _raw_field(key: str):
+                if not isinstance(status_before, dict):
+                    return None
+                value = status_before.get(key)
+                if value not in (None, "", "none"):
+                    return value
+                product = status_before.get("product")
+                if isinstance(product, dict):
+                    pval = product.get(key)
+                    if pval not in (None, "", "none"):
+                        return pval
+                return None
+
+            raw_upgrade_major = _raw_field("upgrade_major_version")
+            raw_upgrade_sets = _raw_field("upgrade_sets")
+            raw_upgrade_packages = _raw_field("upgrade_packages")
+            raw_upgrade_action = str(_raw_field("status_upgrade_action") or "").strip().lower()
+            explicit_upgrade_signal = bool(
+                raw_upgrade_major
+                or (isinstance(raw_upgrade_sets, (list, tuple, set, dict)) and len(raw_upgrade_sets) > 0)
+                or (isinstance(raw_upgrade_packages, (list, tuple, set, dict)) and len(raw_upgrade_packages) > 0)
+                or raw_upgrade_action in ("pkg", "rel", "all", "maj", "min", "upgrade", "update")
+            )
+
+            if pending_count <= 0 and explicit_upgrade_signal:
+                pending_count = 1
+
             if pending_count <= 0:
                 top_msg = ""
                 status_msg = ""
                 if isinstance(status_before, dict):
                     top_msg = str(status_before.get("status", "")).strip()
                     status_msg = str(status_before.get("status_msg", "")).strip()
-                raise Exception(
-                    f"No updates pending on firewall (status={top_msg or 'unknown'}, "
-                    f"status_msg={status_msg or 'none'})"
+                # No-op: don't fail the job when there is simply nothing to do.
+                update_record.status = "success"
+                update_record.version_before = update_record.version_before or extract_firmware_version(status_before)
+                update_record.version_after = update_record.version_before
+                update_record.completed_at = datetime.utcnow()
+                update_record.log = (
+                    f"action=none; reason=no_pending_updates; "
+                    f"status={top_msg or 'unknown'}; status_msg={status_msg or 'none'}"
                 )
+                db.add(update_record)
+                db.commit()
+                return update_record
             pending_count_before = pending_count
 
             # Create pre-update backup
