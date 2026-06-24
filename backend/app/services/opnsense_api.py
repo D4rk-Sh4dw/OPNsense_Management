@@ -317,18 +317,14 @@ class OPNsenseAPI:
         self,
         method: str,
         endpoint: str,
-        **kwargs
+        *,
+        silent: bool = False,
+        **kwargs,
     ) -> Dict[str, Any]:
-        """
-        Make HTTP request to OPNsense API
+        """Make HTTP request to OPNsense API.
 
-        Args:
-            method: HTTP method (GET, POST, etc.)
-            endpoint: API endpoint (e.g., "/core/firmware/status")
-            **kwargs: Additional arguments for httpx
-
-        Returns:
-            Response JSON dict
+        Set silent=True when used inside a fallback chain where the caller will
+        retry on failure; the failure is then logged at DEBUG instead of ERROR.
         """
         url = f"{self.base_url}{endpoint}"
         headers = self._get_auth_header()
@@ -350,7 +346,15 @@ class OPNsenseAPI:
                 except Exception:
                     return {"raw": response.text}
             except httpx.HTTPError as e:
-                logger.error(f"OPNsense API error on {self.host} {method} {endpoint}: {e}")
+                detail = str(e) or e.__class__.__name__
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code is not None:
+                    detail = f"HTTP {status_code} {detail}".strip()
+                msg = f"OPNsense API error on {self.host} {method} {endpoint}: {detail}"
+                if silent:
+                    logger.debug(msg)
+                else:
+                    logger.error(msg)
                 raise
 
     async def _request_raw(self, method: str, endpoint: str, **kwargs) -> bytes:
@@ -404,7 +408,7 @@ class OPNsenseAPI:
         ]
         for method, endpoint in candidates:
             try:
-                return await self._request(method, endpoint)
+                return await self._request(method, endpoint, silent=True)
             except Exception:
                 continue
         return {}
@@ -495,7 +499,7 @@ class OPNsenseAPI:
         """GET /api/core/service/search"""
         # Modern OPNsense uses GET; older use POST. Try GET first.
         try:
-            return await self._request("GET", "/core/service/search")
+            return await self._request("GET", "/core/service/search", silent=True)
         except Exception:
             return await self._request("POST", "/core/service/search", json={})
 
@@ -516,7 +520,7 @@ class OPNsenseAPI:
         for method, endpoint, payload in candidates:
             try:
                 kwargs = {"json": payload} if payload is not None else {}
-                return await self._request(method, endpoint, **kwargs)
+                return await self._request(method, endpoint, silent=True, **kwargs)
             except Exception as e:
                 last_error = e
                 continue
@@ -537,7 +541,7 @@ class OPNsenseAPI:
         for method, endpoint, payload in candidates:
             try:
                 kwargs = {"json": payload} if payload is not None else {}
-                return await self._request(method, endpoint, **kwargs)
+                return await self._request(method, endpoint, silent=True, **kwargs)
             except Exception as e:
                 last_error = e
                 continue
@@ -550,18 +554,18 @@ class OPNsenseAPI:
         return await self._request("GET", "/diagnostics/interface/getArp")
 
     # ===== Logs endpoints =====
-    async def _get_log(self, path: str, limit: int = 100) -> Any:
+    async def _get_log(self, path: str, limit: int = 100, *, silent: bool = False) -> Any:
         """Fetch logs with pagination params (handles both 'rows' wrapper and plain arrays)"""
         # Newer OPNsense uses ?current=1&rowCount=N; older accepts ?limit=N
         params = {"current": 1, "rowCount": limit, "limit": limit}
-        return await self._request("GET", path, params=params)
+        return await self._request("GET", path, silent=silent, params=params)
 
     async def _try_log_paths(self, paths: list, limit: int = 100) -> Any:
         """Try multiple endpoint paths in order, return the first that succeeds with non-empty data."""
         last_error = None
         for path in paths:
             try:
-                data = await self._get_log(path, limit)
+                data = await self._get_log(path, limit, silent=True)
                 # Any successful response wins; lenient because endpoints may be empty
                 if data is not None:
                     return data
@@ -609,7 +613,7 @@ class OPNsenseAPI:
         for method, endpoint, payload in candidates:
             try:
                 kwargs = {"json": payload} if payload is not None and method == "POST" else {}
-                return await self._request(method, endpoint, **kwargs)
+                return await self._request(method, endpoint, silent=True, **kwargs)
             except Exception as e:
                 last_error = e
                 continue
@@ -629,7 +633,7 @@ class OPNsenseAPI:
         for payload in payloads:
             for method, endpoint in [("POST", "/smart/service/info"), ("POST", "/smart/service/details")]:
                 try:
-                    return await self._request(method, endpoint, json=payload)
+                    return await self._request(method, endpoint, silent=True, json=payload)
                 except Exception as e:
                     last_error = e
                     continue

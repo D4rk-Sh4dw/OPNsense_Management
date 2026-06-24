@@ -80,13 +80,19 @@ class UpdateService:
                 logger.warning(f"Pre-update backup failed: {e}")
                 # Continue with update anyway
 
-            # Capture pre-trigger status so we can later detect if a NEW job
-            # actually started (vs. a stale "done" leftover from a previous run).
+            # Capture pre-trigger status AND log so we can later detect whether
+            # a brand-new job ran (vs. observing a stale "done" left over from a
+            # previous run). OPNsense's /firmware/upgradestatus returns the LAST
+            # job's status until configd actually starts the new one, which can
+            # take several seconds after the trigger POST returns 200 OK.
+            pre_status_value = ""
+            pre_log_snapshot = ""
             try:
                 pre_st = await api_client.get_upgrade_status()
                 pre_status_value = str(pre_st.get("status", "")).lower()
+                pre_log_snapshot = str(pre_st.get("log", "") or "")
             except Exception:
-                pre_status_value = ""
+                pass
 
             # Trigger BOTH endpoints in sequence, exactly like the working
             # manual Bruno flow: firmware/update handles package updates,
@@ -121,11 +127,14 @@ class UpdateService:
                 f"action={action}; "
                 f"update_response={update_response}; "
                 f"upgrade_response={upgrade_response}; "
-                f"pre_status={pre_status_value or 'none'}"
+                f"pre_status={pre_status_value or 'none'}; "
+                f"pre_log_len={len(pre_log_snapshot)}"
             )
 
-            # OPNsense needs a moment to register the job.
-            await asyncio.sleep(5)
+            # Give configd time to actually pick up the new job before we start
+            # polling — otherwise the first upgradestatus call may still return
+            # the previous job's "done".
+            await asyncio.sleep(15)
 
             # Verify the job actually started by checking upgradestatus.
             try:
@@ -136,41 +145,43 @@ class UpdateService:
 
             update_record.log += f"; verify_status_after_trigger={verify_status}"
 
-            # If status is still "none"/"done" (and was already "done" before),
-            # the trigger likely did not start a new job.
-            if verify_status in ("none", "", "done") and pre_status_value == "done":
-                logger.warning(
-                    f"Trigger did not start a new job on {firewall.hostname} "
-                    f"(verify_status={verify_status}, pre_status={pre_status_value})"
-                )
-                # We continue polling anyway, but log the suspicion.
-
-            # Poll for completion. We require the status to transition through
-            # "running" to "done"; a stale "done" from a previous run is ignored
-            # by tracking whether we ever saw an in-progress state.
+            # Poll for completion. A new job is considered finished only if:
+            #   (a) we observed an in-progress state ("running"/"reboot"/...), OR
+            #   (b) the upgrade log content differs from the pre-trigger snapshot
+            # AND the status reports "done". This prevents the polling loop from
+            # accepting a stale "done" left over from a previous run.
             max_wait = 3600  # 1 hour
             poll_interval = 10
+            min_wait_before_done = 20  # do not accept "done" within the first 20s
             elapsed = 0
             completed = False
             saw_running = False
+            last_log_snapshot = pre_log_snapshot
             phase = action
 
             while elapsed < max_wait:
                 try:
                     st = await api_client.get_upgrade_status()
                     st_value = str(st.get("status", "")).lower()
+                    st_log = str(st.get("log", "") or "")
+                    last_log_snapshot = st_log
 
                     if st_value in ("running", "reboot", "upgrading", "installing"):
                         saw_running = True
 
                     if st_value == "done":
-                        # Treat as completion only if we previously saw running,
-                        # OR if the status differs from the pre-trigger "done" snapshot
-                        # (which would mean OPNsense finished a brand-new fast job).
-                        if saw_running or pre_status_value != "done":
-                            logger.info(f"Firmware job done on {firewall.hostname} (action={action})")
+                        log_changed = st_log and st_log != pre_log_snapshot
+                        fresh_completion = saw_running or log_changed
+                        if fresh_completion and elapsed >= min_wait_before_done:
+                            logger.info(
+                                f"Firmware job done on {firewall.hostname} "
+                                f"(action={action}, saw_running={saw_running}, "
+                                f"log_changed={bool(log_changed)})"
+                            )
                             completed = True
                             break
+                        # Otherwise keep polling — likely a stale "done" from a
+                        # previous run or we have not waited long enough yet.
 
                     if st_value == "error":
                         raise Exception(f"OPNsense reported upgrade error: {st.get('log', 'Unknown error')}")
@@ -184,7 +195,8 @@ class UpdateService:
             if not completed:
                 raise Exception(
                     f"Firmware job did not complete within {max_wait}s "
-                    f"(saw_running={saw_running}, action={action})"
+                    f"(saw_running={saw_running}, action={action}, "
+                    f"log_changed={bool(last_log_snapshot and last_log_snapshot != pre_log_snapshot)})"
                 )
 
             # Check if reboot needed
