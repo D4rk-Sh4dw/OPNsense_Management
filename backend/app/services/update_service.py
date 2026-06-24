@@ -80,18 +80,40 @@ class UpdateService:
                 logger.warning(f"Pre-update backup failed: {e}")
                 # Continue with update anyway
 
-            # Trigger update/upgrade depending on payload shape.
-            is_upgrade_path = (
-                str(status_before.get("status", "")).lower() in ("upgrade", "major")
-                or bool(status_before.get("upgrade_sets"))
-            )
-            action = "upgrade" if is_upgrade_path else "update"
-            logger.info(f"Starting firmware {action} on {firewall.hostname}")
+            # Probe both endpoints to see which one OPNsense accepts.
+            # Try update first, then upgrade. Whichever starts a detectable job wins.
+            logger.info(f"Probing firmware endpoints for {firewall.hostname}...")
+            update_record.log = ""
+            action = None
+            update_response = None
 
-            if is_upgrade_path:
-                update_response = await api_client.upgrade_firmware()
-            else:
-                update_response = await api_client.install_updates()
+            for probe_action in ("update", "upgrade"):
+                try:
+                    logger.info(f"Trying firmware/{probe_action} on {firewall.hostname}...")
+                    if probe_action == "upgrade":
+                        response = await api_client.upgrade_firmware()
+                    else:
+                        response = await api_client.install_updates()
+
+                    # Wait a moment and check if status shows activity.
+                    await asyncio.sleep(2)
+                    try:
+                        st = await api_client.get_upgrade_status()
+                        st_value = str(st.get("status", "")).lower()
+                        if st_value and st_value not in ("none", "unknown"):
+                            # This endpoint accepted the job!
+                            action = probe_action
+                            update_response = response
+                            logger.info(f"✓ firmware/{probe_action} accepted (status={st_value})")
+                            break
+                    except Exception:
+                        pass
+
+                except Exception as e:
+                    logger.debug(f"firmware/{probe_action} failed or rejected: {e}")
+
+            if not action:
+                raise Exception("Neither firmware/update nor firmware/upgrade was accepted by the firewall")
 
             update_record.log = f"action={action}; response={update_response}"
 
@@ -133,7 +155,8 @@ class UpdateService:
             if not completed and not saw_activity:
                 fallback_action = "update" if action == "upgrade" else "upgrade"
                 logger.warning(
-                    f"No upgrade-status activity after {initial_probe_wait}s for {firewall.hostname}; trying fallback {fallback_action}"
+                    f"No upgrade-status activity after {initial_probe_wait}s for {firewall.hostname}; "
+                    f"trying fallback {fallback_action} (initial choice was {action})"
                 )
                 try:
                     if fallback_action == "upgrade":
