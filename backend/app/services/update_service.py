@@ -94,30 +94,53 @@ class UpdateService:
             except Exception:
                 pass
 
-            # Trigger BOTH endpoints in sequence, exactly like the working
-            # manual Bruno flow: firmware/update handles package updates,
-            # firmware/upgrade handles major version transitions. OPNsense
-            # ignores whichever one is not applicable, so calling both is safe.
-            logger.info(f"Triggering firmware/update + firmware/upgrade on {firewall.hostname}")
+            # Decide which firmware endpoint to use BEFORE triggering. OPNsense
+            # exposes two distinct flows that must not be called together:
+            #   * /core/firmware/update  → runs `pkg upgrade` for package updates
+            #   * /core/firmware/upgrade → major version transition (needs payload)
+            # /firmware/upgradestatus only reports the LAST job's status, so when
+            # we call both back-to-back the no-op `upgrade` (empty body on a
+            # minor-update firewall) finishes instantly, returns "done", and
+            # masks the real `pkg upgrade` that is still running underneath.
+            top_status = ""
+            if isinstance(status_before, dict):
+                top_status = str(status_before.get("status", "")).lower()
+            use_upgrade = top_status in ("upgrade", "release_update")
+
+            # Trigger the selected endpoint.
+            logger.info(
+                f"Triggering firmware/{'upgrade' if use_upgrade else 'update'} on "
+                f"{firewall.hostname} (top_status={top_status or 'unknown'})"
+            )
             triggered = []
             update_response = None
             upgrade_response = None
 
-            try:
-                update_response = await api_client.install_updates()
-                triggered.append("update")
-                logger.info(f"firmware/update response on {firewall.hostname}: {update_response}")
-            except Exception as e:
-                logger.warning(f"firmware/update failed on {firewall.hostname}: {e}")
-                update_response = f"error: {e}"
-
-            try:
-                upgrade_response = await api_client.upgrade_firmware()
-                triggered.append("upgrade")
-                logger.info(f"firmware/upgrade response on {firewall.hostname}: {upgrade_response}")
-            except Exception as e:
-                logger.warning(f"firmware/upgrade failed on {firewall.hostname}: {e}")
-                upgrade_response = f"error: {e}"
+            if use_upgrade:
+                try:
+                    upgrade_response = await api_client.upgrade_firmware()
+                    triggered.append("upgrade")
+                    logger.info(f"firmware/upgrade response on {firewall.hostname}: {upgrade_response}")
+                except Exception as e:
+                    logger.warning(f"firmware/upgrade failed on {firewall.hostname}: {e}")
+                    upgrade_response = f"error: {e}"
+                    # Fall back to /update so a misdetected status does not
+                    # leave us without any trigger attempt.
+                    try:
+                        update_response = await api_client.install_updates()
+                        triggered.append("update")
+                        logger.info(f"firmware/update fallback response on {firewall.hostname}: {update_response}")
+                    except Exception as e2:
+                        logger.warning(f"firmware/update fallback failed on {firewall.hostname}: {e2}")
+                        update_response = f"error: {e2}"
+            else:
+                try:
+                    update_response = await api_client.install_updates()
+                    triggered.append("update")
+                    logger.info(f"firmware/update response on {firewall.hostname}: {update_response}")
+                except Exception as e:
+                    logger.warning(f"firmware/update failed on {firewall.hostname}: {e}")
+                    update_response = f"error: {e}"
 
             if not triggered:
                 raise Exception("Neither firmware/update nor firmware/upgrade accepted by firewall")
@@ -125,6 +148,7 @@ class UpdateService:
             action = "+".join(triggered)
             update_record.log = (
                 f"action={action}; "
+                f"top_status={top_status or 'unknown'}; "
                 f"update_response={update_response}; "
                 f"upgrade_response={upgrade_response}; "
                 f"pre_status={pre_status_value or 'none'}; "
