@@ -108,4 +108,9 @@ async def send_test(key: str, recipients: dict, db: Session = Depends(get_db)):
     if not addrs:
         raise HTTPException(status_code=400, detail="No valid recipients provided")
     ok = EmailService.send(key, addrs, _DEFAULT_PREVIEW)
+    if not ok:
+        raise HTTPException(
+            status_code=502,
+            detail="SMTP send failed. Check SMTP_FROM/SMTP_USER ownership and mail server policy.",
+        )
     return {"sent": ok, "recipients": addrs}

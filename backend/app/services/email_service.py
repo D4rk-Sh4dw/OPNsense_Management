@@ -127,26 +127,54 @@ def _send_smtp(to_emails: list[str], subject: str, html: str, plain: str | None,
     if not to_emails:
         logger.info("No recipients - skipping e-mail")
         return False
-    try:
+
+    preferred_from = settings.SMTP_FROM
+    fallback_from = settings.SMTP_USER if settings.SMTP_USER else settings.SMTP_FROM
+
+    def _build_message(from_addr: str) -> str:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = settings.SMTP_FROM
+        msg["From"] = from_addr
         msg["To"] = ", ".join(to_emails)
         if reply_to:
             msg["Reply-To"] = reply_to
         if plain:
             msg.attach(MIMEText(plain, "plain", "utf-8"))
         msg.attach(MIMEText(html, "html", "utf-8"))
+        return msg.as_string()
 
+    def _attempt_send(from_addr: str) -> None:
+        payload = _build_message(from_addr)
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             if settings.SMTP_USE_TLS:
                 server.starttls()
             if settings.SMTP_USER and settings.SMTP_PASSWORD:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_FROM, to_emails, msg.as_string())
+            server.sendmail(from_addr, to_emails, payload)
 
+    try:
+        _attempt_send(preferred_from)
         logger.info(f"Email sent to {to_emails}: {subject}")
         return True
+    except smtplib.SMTPResponseException as e:
+        # Common with hosted SMTP providers: sender must match authenticated user.
+        can_retry = fallback_from and fallback_from != preferred_from and e.smtp_code in {550, 553, 554}
+        if can_retry:
+            try:
+                logger.warning(
+                    "SMTP sender rejected for '%s' (code %s). Retrying with authenticated sender '%s'.",
+                    preferred_from,
+                    e.smtp_code,
+                    fallback_from,
+                )
+                _attempt_send(fallback_from)
+                logger.info(f"Email sent to {to_emails}: {subject}")
+                return True
+            except Exception as retry_error:  # noqa: BLE001
+                logger.error(f"Failed to send email to {to_emails}: {retry_error}")
+                return False
+        logger.error(f"Failed to send email to {to_emails}: {e}")
+        return False
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to send email to {to_emails}: {e}")
         return False
