@@ -97,6 +97,7 @@ class UpdateService:
             pending_count = extract_firmware_update_count(status_before)
             if pending_count <= 0:
                 raise Exception("No updates pending on firewall")
+            pending_count_before = pending_count
 
             # Create pre-update backup
             logger.info(f"Creating pre-update backup for {firewall.hostname}")
@@ -106,11 +107,9 @@ class UpdateService:
                 logger.warning(f"Pre-update backup failed: {e}")
                 # Continue with update anyway
 
-            # Capture pre-trigger status AND log so we can later detect whether
-            # a brand-new job ran (vs. observing a stale "done" left over from a
-            # previous run). OPNsense's /firmware/upgradestatus returns the LAST
-            # job's status until configd actually starts the new one, which can
-            # take several seconds after the trigger POST returns 200 OK.
+            # Capture pre-trigger upgradestatus log so we can later detect a
+            # ***ERROR*** marker that appears AFTER the trigger (vs. one that
+            # was already present from a previous run).
             pre_status_value = ""
             pre_log_snapshot = ""
             try:
@@ -182,96 +181,104 @@ class UpdateService:
             )
 
             # Give configd time to actually pick up the new job before we start
-            # polling — otherwise the first upgradestatus call may still return
-            # the previous job's "done".
+            # polling.
             await asyncio.sleep(15)
 
-            # Verify the job actually started by checking upgradestatus.
-            try:
-                verify_st = await api_client.get_upgrade_status()
-                verify_status = str(verify_st.get("status", "")).lower()
-            except Exception as e:
-                verify_status = f"error: {e}"
-
-            update_record.log += f"; verify_status_after_trigger={verify_status}"
-
-            # Poll for completion by parsing the upgradestatus log content.
-            # OPNsense's `status` field is unreliable (almost always "done" once
-            # any previous job finished). The log itself contains explicit
-            # markers we can match:
-            #   ***GOT REQUEST TO <ACTION>***  — start of a new job
-            #   ***DONE***                     — successful completion marker
-            #   ***ERROR***                    — failure marker
-            #   ***REBOOT***                   — reboot phase
-            # A run is considered successful only when the LAST "GOT REQUEST TO"
-            # marker references a real install (UPDATE/UPGRADE/INSTALL), NOT a
-            # plain CHECK, and is followed by ***DONE***.
+            # Poll for completion by observing the firewall itself: the firmware
+            # version string and the pending-update count are the ground truth.
+            # We declare success when EITHER:
+            #   (a) firmware/status reports a different version than before, OR
+            #   (b) the pending-update count dropped to 0 after the trigger.
+            # Connection errors are tolerated (firewall may be rebooting). In
+            # parallel we still watch upgradestatus for an ***ERROR*** marker
+            # that appeared AFTER our trigger so we can fail fast on real
+            # errors instead of waiting for the full timeout.
             max_wait = 3600  # 1 hour
-            poll_interval = 10
+            poll_interval = 15
+            min_wait_before_done = 30  # do not accept "no pending" within first 30s
             elapsed = 0
             completed = False
             saw_running = False
-            last_log_snapshot = pre_log_snapshot
-            last_kind = None
+            successful_polls_after_trigger = 0
+            last_observed_version = update_record.version_before
+            last_observed_pending = pending_count_before
 
             while elapsed < max_wait:
+                # Watch upgradestatus log for an ERROR marker that appeared
+                # AFTER our trigger. Tolerate connection failures (reboot).
                 try:
                     st = await api_client.get_upgrade_status()
-                    st_value = str(st.get("status", "")).lower()
                     st_log = str(st.get("log", "") or "")
-                    last_log_snapshot = st_log
-
                     info = _classify_upgrade_log(st_log)
                     kind = info["job_kind"] or ""
-                    last_kind = kind
 
-                    if info["is_error"]:
-                        # Surface the tail of the log so the alert/email is useful.
-                        tail = st_log[-500:] if st_log else "(no log)"
-                        raise Exception(f"OPNsense reported upgrade ERROR marker: {tail}")
-
-                    # Treat any active install/upgrade job WITHOUT a DONE marker
-                    # yet as "running" — this includes the reboot phase.
-                    kind_is_install = any(k in kind for k in _INSTALL_KINDS)
-                    kind_is_check = any(k in kind for k in _CHECK_KINDS) and not kind_is_install
-
-                    if kind_is_install and not info["is_done"]:
+                    # Mark "running" once we see an install-job marker that is
+                    # NOT yet marked done — useful debug signal in the log.
+                    if any(k in kind for k in _INSTALL_KINDS) and not info["is_done"]:
                         saw_running = True
 
-                    # Successful completion: latest marker is for an install/
-                    # upgrade job AND DONE marker is present after it.
-                    if kind_is_install and info["is_done"]:
-                        logger.info(
-                            f"Firmware job done on {firewall.hostname} "
-                            f"(kind={kind}, saw_running={saw_running}, "
-                            f"reboot_in_log={info['is_reboot']})"
-                        )
-                        completed = True
-                        break
-
-                    # If the latest marker is just a CHECK, configd hasn't
-                    # picked up our install job yet — keep waiting.
-                    if kind_is_check:
-                        logger.debug(
-                            f"upgradestatus shows CHECK job (kind={kind}); "
-                            f"waiting for install job to start on {firewall.hostname}"
-                        )
-
+                    # ERROR only counts as a real failure if it appeared after
+                    # our trigger (i.e. the log differs from the pre-snapshot).
+                    if info["is_error"] and st_log != pre_log_snapshot:
+                        tail = st_log[-500:]
+                        raise Exception(f"OPNsense reported upgrade ERROR marker: {tail}")
                 except Exception as e:
-                    # Re-raise ERROR-marker exceptions, but tolerate transient
-                    # API failures (e.g. during reboot).
                     if "upgrade ERROR marker" in str(e):
                         raise
-                    logger.warning(f"upgradestatus check failed for {firewall.hostname}: {e}")
+                    # Reboot / transient failure — just keep polling.
+                    logger.debug(f"upgradestatus poll failed for {firewall.hostname}: {e}")
+
+                # Primary completion check: query firmware/status and compare.
+                try:
+                    status_now = await api_client.get_firmware_status()
+                    successful_polls_after_trigger += 1
+                    version_now = extract_firmware_version(status_now)
+                    pending_now = extract_firmware_update_count(status_now)
+                    last_observed_version = version_now or last_observed_version
+                    last_observed_pending = pending_now
+
+                    version_changed = bool(
+                        version_now
+                        and update_record.version_before
+                        and version_now != update_record.version_before
+                    )
+                    pending_cleared = (
+                        pending_now == 0
+                        and pending_count_before > 0
+                        and successful_polls_after_trigger >= 2
+                        and elapsed >= min_wait_before_done
+                    )
+
+                    if version_changed or pending_cleared:
+                        logger.info(
+                            f"Update completed on {firewall.hostname}: "
+                            f"version {update_record.version_before} -> {version_now}, "
+                            f"pending {pending_count_before} -> {pending_now} "
+                            f"(version_changed={version_changed}, pending_cleared={pending_cleared})"
+                        )
+                        completed = True
+                        # Refresh the pending count from OPNsense before the
+                        # success path so the dashboard updates immediately.
+                        try:
+                            await api_client.check_firmware_updates()
+                        except Exception:
+                            pass
+                        break
+                except Exception as e:
+                    # Likely a reboot in progress — just keep polling.
+                    logger.debug(f"firmware/status poll failed for {firewall.hostname}: {e}")
 
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
 
             if not completed:
                 raise Exception(
-                    f"Firmware job did not complete within {max_wait}s "
+                    f"Firmware update did not complete within {max_wait}s "
                     f"(saw_running={saw_running}, action={action}, "
-                    f"last_kind={last_kind or 'none'})"
+                    f"version_before={update_record.version_before}, "
+                    f"version_last_seen={last_observed_version}, "
+                    f"pending_before={pending_count_before}, "
+                    f"pending_last_seen={last_observed_pending})"
                 )
 
             # OPNsense reboots itself when the firmware job requires it
