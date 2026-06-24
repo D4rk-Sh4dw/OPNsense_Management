@@ -22,6 +22,19 @@ settings = get_settings()
 _CONNECTIVITY_FAILURES: dict[str, int] = {}
 _CONNECTIVITY_FAIL_THRESHOLD = 3
 _CONNECTIVITY_RETRIES = 2
+_RECOVERY_UPDATE_CHECK_LAST_RUN: dict[str, datetime] = {}
+
+
+def _recovery_update_check_due(firewall_id) -> bool:
+    """Rate-limit recovery-triggered update checks by global update interval."""
+    key = str(firewall_id)
+    now = datetime.utcnow()
+    interval_minutes = max(1, int(settings.UPDATE_CHECK_INTERVAL_MINUTES or 30))
+    last_run = _RECOVERY_UPDATE_CHECK_LAST_RUN.get(key)
+    if last_run and (now - last_run) < timedelta(minutes=interval_minutes):
+        return False
+    _RECOVERY_UPDATE_CHECK_LAST_RUN[key] = now
+    return True
 
 
 def _open_alert(db: Session, firewall_id, alert_type: str):
@@ -346,8 +359,16 @@ class MonitoringService:
                 # the next full health check cycle.
                 try:
                     from app.services.update_service import UpdateService
-                    logger.info(f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}")
-                    await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+                    if _recovery_update_check_due(firewall.id):
+                        logger.info(
+                            f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}"
+                        )
+                        await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+                    else:
+                        logger.info(
+                            f"Skipping recovery update check for {firewall.hostname or firewall.ip}: "
+                            f"waiting for UPDATE_CHECK_INTERVAL_MINUTES window"
+                        )
                 except Exception as upd_err:
                     logger.warning(f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {upd_err}")
 
@@ -470,11 +491,16 @@ class MonitoringService:
         if was_offline and status.online:
             try:
                 from app.services.update_service import UpdateService
-
-                logger.info(
-                    f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}"
-                )
-                await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+                if _recovery_update_check_due(firewall.id):
+                    logger.info(
+                        f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}"
+                    )
+                    await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+                else:
+                    logger.info(
+                        f"Skipping recovery update check for {firewall.hostname or firewall.ip}: "
+                        f"waiting for UPDATE_CHECK_INTERVAL_MINUTES window"
+                    )
             except Exception as e:
                 logger.warning(
                     f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {e}"
