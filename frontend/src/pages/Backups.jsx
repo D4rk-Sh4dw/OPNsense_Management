@@ -14,6 +14,7 @@ export default function Backups() {
   const [restoreMode, setRestoreMode] = useState('full') // 'full' | 'partial'
   const [toast, setToast] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [firewallSearch, setFirewallSearch] = useState('')
 
   const AREA_OPTIONS = [
     { id: 'aliases', label: 'Aliases' },
@@ -134,6 +135,12 @@ export default function Backups() {
   }
 
   const selectedFw = firewalls.find(f => f.id === selected)
+  const filteredFirewallOptions = firewalls.filter((fw) => {
+    const q = firewallSearch.trim().toLowerCase()
+    if (!q) return true
+    const haystack = [fw.customer_name, fw.hostname, fw.ip].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
   const filteredBackups = backups.filter((b) => {
     const q = searchQuery.trim().toLowerCase()
     if (!q) return true
@@ -168,12 +175,19 @@ export default function Backups() {
         <>
           {/* Firewall Selector + Create */}
           <div className="flex gap-4 mb-6 flex-wrap">
+            <input
+              type="text"
+              value={firewallSearch}
+              onChange={(e) => setFirewallSearch(e.target.value)}
+              placeholder="Search firewall for dropdown..."
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 font-semibold"
+            />
             <select
               value={selected || ''}
               onChange={e => setSelected(e.target.value)}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 font-semibold"
             >
-              {firewalls.map(fw => (
+              {filteredFirewallOptions.map(fw => (
                 <option key={fw.id} value={fw.id}>{fw.customer_name} – {fw.ip}</option>
               ))}
             </select>

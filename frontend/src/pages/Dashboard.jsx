@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { monitoringAPI } from '../api/client'
+import { Link } from 'react-router-dom'
+import { monitoringAPI, updatesAPI } from '../api/client'
 
 export default function Dashboard() {
   const [summary, setSummary] = useState(null)
@@ -10,6 +11,10 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false)
   const [intervalSec, setIntervalSec] = useState(15)
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedFirewallIds, setSelectedFirewallIds] = useState([])
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [updatingIds, setUpdatingIds] = useState([])
+  const [toast, setToast] = useState(null)
 
   useEffect(() => {
     loadData(false)
@@ -71,6 +76,66 @@ export default function Dashboard() {
     return haystack.includes(q)
   })
 
+  const updatableFilteredIds = filteredFirewalls
+    .filter(fw => (fw.updates_available || 0) > 0)
+    .map(fw => fw.id)
+
+  const selectedUpdatableIds = selectedFirewallIds.filter(id => updatableFilteredIds.includes(id))
+  const allFilteredSelected = updatableFilteredIds.length > 0 && selectedUpdatableIds.length === updatableFilteredIds.length
+
+  const showToast = (msg, ok = true) => {
+    setToast({ msg, ok })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedFirewallIds(prev => prev.filter(id => !updatableFilteredIds.includes(id)))
+    } else {
+      setSelectedFirewallIds(prev => Array.from(new Set([...prev, ...updatableFilteredIds])))
+    }
+  }
+
+  const toggleSelectOne = (id) => {
+    setSelectedFirewallIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const installOne = async (fw) => {
+    if ((fw.updates_available || 0) <= 0) return
+    if (!window.confirm(`Start update for ${fw.customer_name} (${fw.ip})?`)) return
+
+    setUpdatingIds(prev => [...prev, fw.id])
+    try {
+      await updatesAPI.installUpdates(fw.id)
+      showToast(`Update started: ${fw.customer_name}`)
+    } catch (e) {
+      showToast(`Failed to start update for ${fw.customer_name}`, false)
+    } finally {
+      setUpdatingIds(prev => prev.filter(id => id !== fw.id))
+    }
+  }
+
+  const installSelected = async () => {
+    if (selectedUpdatableIds.length === 0) {
+      showToast('No updatable firewall selected', false)
+      return
+    }
+    if (!window.confirm(`Start updates for ${selectedUpdatableIds.length} selected firewall(s)?`)) return
+
+    setBulkUpdating(true)
+    setUpdatingIds(prev => Array.from(new Set([...prev, ...selectedUpdatableIds])))
+    const jobs = await Promise.allSettled(selectedUpdatableIds.map(id => updatesAPI.installUpdates(id)))
+    const ok = jobs.filter(j => j.status === 'fulfilled').length
+    const failed = jobs.length - ok
+    setUpdatingIds(prev => prev.filter(id => !selectedUpdatableIds.includes(id)))
+    setBulkUpdating(false)
+    if (failed === 0) {
+      showToast(`Updates started for ${ok} firewall(s)`)
+    } else {
+      showToast(`Started: ${ok}, Failed: ${failed}`, false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -91,6 +156,12 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 px-6 py-3 rounded-lg shadow-lg font-semibold text-white ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
+          {toast.msg}
+        </div>
+      )}
+
       <div className="mb-8 flex justify-between items-start">
         <div>
           <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">Dashboard</h1>
@@ -116,6 +187,11 @@ export default function Dashboard() {
           <button onClick={() => loadData(true)}
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-semibold text-sm">
             🔄 Refresh
+          </button>
+          <button onClick={installSelected}
+            disabled={bulkUpdating || selectedUpdatableIds.length === 0}
+            className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 font-semibold text-sm disabled:opacity-50">
+            {bulkUpdating ? 'Starting...' : `⚡ Update Selected (${selectedUpdatableIds.length})`}
           </button>
         </div>
       </div>
@@ -165,6 +241,15 @@ export default function Dashboard() {
           <table className="w-full">
             <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
               <tr>
+                <th className="px-4 py-4 text-left text-sm font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    title="Select all updatable firewalls in current filter"
+                    className="h-4 w-4"
+                  />
+                </th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Customer</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Hostname</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">IP Address</th>
@@ -172,6 +257,7 @@ export default function Dashboard() {
                 <th className="px-6 py-4 text-left text-sm font-semibold">Firmware</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Updates</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">Resources</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold">GUI</th>
               </tr>
             </thead>
@@ -179,6 +265,16 @@ export default function Dashboard() {
               {filteredFirewalls && filteredFirewalls.length > 0 ? (
                 filteredFirewalls.map((fw) => (
                   <tr key={fw.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
+                    <td className="px-4 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedFirewallIds.includes(fw.id)}
+                        disabled={(fw.updates_available || 0) <= 0}
+                        onChange={() => toggleSelectOne(fw.id)}
+                        className="h-4 w-4"
+                        title={(fw.updates_available || 0) > 0 ? 'Select for bulk update' : 'No updates available'}
+                      />
+                    </td>
                     <td className="px-6 py-4 font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</td>
                     <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || 'N/A'}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400 font-mono text-sm">{fw.ip}</td>
@@ -226,6 +322,23 @@ export default function Dashboard() {
                       )}
                     </td>
                     <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <Link
+                          to={`/firewalls/${fw.id}`}
+                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-bold text-sm"
+                        >
+                          Details
+                        </Link>
+                        <button
+                          onClick={() => installOne(fw)}
+                          disabled={(fw.updates_available || 0) <= 0 || updatingIds.includes(fw.id)}
+                          className="text-amber-600 hover:text-amber-800 font-bold text-sm disabled:opacity-50"
+                        >
+                          {updatingIds.includes(fw.id) ? 'Starting...' : '⚡ Update'}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
                       <a
                         href={`https://${fw.ip}`}
                         target="_blank"
@@ -240,7 +353,7 @@ export default function Dashboard() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan="10" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     {firewalls && firewalls.length > 0
                       ? 'No firewall matches your search.'
                       : 'No firewalls registered yet. Go to Firewalls tab to add one.'}
