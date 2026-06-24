@@ -23,6 +23,9 @@ _CONNECTIVITY_FAILURES: dict[str, int] = {}
 _CONNECTIVITY_FAIL_THRESHOLD = 3
 _CONNECTIVITY_RETRIES = 2
 _RECOVERY_UPDATE_CHECK_LAST_RUN: dict[str, datetime] = {}
+_RECOVERY_ONLINE_SINCE: dict[str, datetime] = {}
+_RECOVERY_CHECK_DONE_FOR_STREAK: dict[str, bool] = {}
+_RECOVERY_STABLE_ONLINE_DELAY = timedelta(minutes=5)
 
 
 def _recovery_update_check_due(firewall_id) -> bool:
@@ -35,6 +38,67 @@ def _recovery_update_check_due(firewall_id) -> bool:
         return False
     _RECOVERY_UPDATE_CHECK_LAST_RUN[key] = now
     return True
+
+
+async def _maybe_run_recovery_update_check(
+    db: Session,
+    firewall: Firewall,
+    prev_online: bool | None,
+    now_online: bool,
+) -> None:
+    """Run recovery update check only after 5 minutes of stable online state.
+
+    If the firewall goes offline during that window, the timer is reset and
+    starts over on the next recovery.
+    """
+    key = str(firewall.id)
+    now = datetime.utcnow()
+
+    if not now_online:
+        _RECOVERY_ONLINE_SINCE.pop(key, None)
+        _RECOVERY_CHECK_DONE_FOR_STREAK.pop(key, None)
+        return
+
+    if prev_online is not True:
+        _RECOVERY_ONLINE_SINCE[key] = now
+        _RECOVERY_CHECK_DONE_FOR_STREAK.pop(key, None)
+        logger.info(
+            f"Firewall recovered online for {firewall.hostname or firewall.ip}; "
+            "waiting 5 minutes of stable online state before update check"
+        )
+        return
+
+    online_since = _RECOVERY_ONLINE_SINCE.get(key)
+    if not online_since:
+        _RECOVERY_ONLINE_SINCE[key] = now
+        return
+
+    if _RECOVERY_CHECK_DONE_FOR_STREAK.get(key):
+        return
+
+    if (now - online_since) < _RECOVERY_STABLE_ONLINE_DELAY:
+        return
+
+    if not _recovery_update_check_due(firewall.id):
+        logger.info(
+            f"Skipping recovery update check for {firewall.hostname or firewall.ip}: "
+            "waiting for UPDATE_CHECK_INTERVAL_MINUTES window"
+        )
+        return
+
+    try:
+        from app.services.update_service import UpdateService
+
+        logger.info(
+            f"Firewall has been stable online for 5 minutes, refreshing updates for "
+            f"{firewall.hostname or firewall.ip}"
+        )
+        await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+        _RECOVERY_CHECK_DONE_FOR_STREAK[key] = True
+    except Exception as upd_err:
+        logger.warning(
+            f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {upd_err}"
+        )
 
 
 def _open_alert(db: Session, firewall_id, alert_type: str):
@@ -342,7 +406,7 @@ class MonitoringService:
 
         db.commit()
 
-        # Alert + post-recovery actions only on state transition
+        # Alert handling on state transition
         if now_online != prev_online:
             if not now_online:
                 raise_alert(
@@ -354,23 +418,9 @@ class MonitoringService:
                 )
             else:
                 resolve_alert_if_open(db, firewall.id, "offline")
-                # Trigger update status refresh immediately on recovery so the
-                # dashboard shows up-to-date pending updates without waiting for
-                # the next full health check cycle.
-                try:
-                    from app.services.update_service import UpdateService
-                    if _recovery_update_check_due(firewall.id):
-                        logger.info(
-                            f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}"
-                        )
-                        await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
-                    else:
-                        logger.info(
-                            f"Skipping recovery update check for {firewall.hostname or firewall.ip}: "
-                            f"waiting for UPDATE_CHECK_INTERVAL_MINUTES window"
-                        )
-                except Exception as upd_err:
-                    logger.warning(f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {upd_err}")
+
+        # Recovery update check (debounced: 5 min stable-online)
+        await _maybe_run_recovery_update_check(db, firewall, prev_online, now_online)
 
         return now_online
 
@@ -488,23 +538,7 @@ class MonitoringService:
         db.commit()
         db.refresh(status)
 
-        if was_offline and status.online:
-            try:
-                from app.services.update_service import UpdateService
-                if _recovery_update_check_due(firewall.id):
-                    logger.info(
-                        f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}"
-                    )
-                    await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
-                else:
-                    logger.info(
-                        f"Skipping recovery update check for {firewall.hostname or firewall.ip}: "
-                        f"waiting for UPDATE_CHECK_INTERVAL_MINUTES window"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {e}"
-                )
+        await _maybe_run_recovery_update_check(db, firewall, previous_status.online if previous_status else None, bool(status.online))
 
         # Post-status alerting (uses fresh status + history)
         try:
