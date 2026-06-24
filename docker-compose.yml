@@ -68,6 +68,10 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-password}
       SMTP_FROM: ${SMTP_FROM:-cms@example.com}
       VERIFY_SSL: "false"
+      LICENSE_CHECK_HOUR: ${LICENSE_CHECK_HOUR:-2}
+      MONITORING_INTERVAL_MINUTES: ${MONITORING_INTERVAL_MINUTES:-5}
+      BACKUP_CHECK_HOUR: ${BACKUP_CHECK_HOUR:-1}
+      SMART_CHECK_HOUR: ${SMART_CHECK_HOUR:-3}
     depends_on:
       - db
       - cms-backend
@@ -85,7 +89,7 @@ services:
       dockerfile: Dockerfile
     container_name: opnsense_cms_mcp
     environment:
-      CMS_API_URL: http://cms-backend:8001
+      CMS_API_URL: http://cms-backend:8000
     depends_on:
       cms-backend:
         condition: service_healthy
