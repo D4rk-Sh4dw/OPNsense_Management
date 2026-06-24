@@ -19,7 +19,7 @@ from app.schemas import (
 )
 from app.services.encryption_service import EncryptionService
 from app.services.monitoring_service import MonitoringService
-from app.services.opnsense_api import OPNsenseAPI, extract_license_type, extract_firmware_version
+from app.services.opnsense_api import OPNsenseAPI, extract_license_type, extract_license_expiry, extract_firmware_version
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
@@ -422,12 +422,39 @@ async def fetch_license_from_firewall(
             license_type = firewall.license_type or "community"
 
         firewall.license_type = license_type
+
+        # Best-effort expiry detection across firmware/status, firmware/info and
+        # the optional Business license endpoints.
+        expiry = extract_license_expiry(fw_status)
+        sources_tried = ["firmware/status"]
+        if not expiry:
+            try:
+                fw_info = await api.get_firmware_info()
+                sources_tried.append("firmware/info")
+                expiry = extract_license_expiry(fw_info)
+            except Exception as e:
+                logger.debug(f"firmware/info unavailable for {firewall.hostname}: {e}")
+        if not expiry and license_type == "business":
+            try:
+                business = await api.get_business_license()
+                if business:
+                    sources_tried.append("business/license")
+                    expiry = extract_license_expiry(business)
+            except Exception as e:
+                logger.debug(f"business license endpoint unavailable for {firewall.hostname}: {e}")
+
+        if expiry:
+            firewall.license_expiry = expiry
+
         db.commit()
 
         return {
             "license_type": license_type,
             "product_name": product_name,
             "product_version": extract_firmware_version(fw_status),
+            "license_expiry": firewall.license_expiry.isoformat() if firewall.license_expiry else None,
+            "expiry_detected": expiry is not None,
+            "expiry_sources": sources_tried,
         }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")

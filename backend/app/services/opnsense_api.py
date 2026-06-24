@@ -1,6 +1,7 @@
 import base64
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import httpx
 from app.config import get_settings
@@ -132,6 +133,118 @@ def extract_license_type(status: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%Y-%m-%d %H:%M:%S",
+    "%d.%m.%Y",
+    "%d/%m/%Y",
+    "%m/%d/%Y",
+    "%b %d %Y",
+    "%b %d, %Y",
+    "%B %d %Y",
+    "%B %d, %Y",
+)
+
+
+def _parse_datelike(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            if value > 10_000_000_000:  # treat as milliseconds
+                value = value / 1000
+            if 0 < value < 4_102_444_800:  # < year 2100
+                return datetime.fromtimestamp(float(value), tz=timezone.utc).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return None
+    if not isinstance(value, str):
+        return None
+
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+
+    try:
+        return datetime.fromisoformat(cleaned.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        pass
+
+    candidates = [cleaned]
+    iso_match = re.search(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?", cleaned)
+    if iso_match:
+        candidates.append(iso_match.group(0))
+    dot_match = re.search(r"\b\d{1,2}\.\d{1,2}\.\d{2,4}\b", cleaned)
+    if dot_match:
+        candidates.append(dot_match.group(0))
+    slash_match = re.search(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b", cleaned)
+    if slash_match:
+        candidates.append(slash_match.group(0))
+
+    for candidate in candidates:
+        for fmt in _DATE_FORMATS:
+            try:
+                return datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+_EXPIRY_KEYS = (
+    "license_expiry",
+    "license_expires",
+    "license_expires_at",
+    "license_valid_until",
+    "license_valid_to",
+    "license_end",
+    "subscription_expires",
+    "subscription_expires_at",
+    "subscription_valid_until",
+    "subscription_valid_to",
+    "subscription_end",
+    "valid_until",
+    "valid_to",
+    "expires",
+    "expires_at",
+    "expiration",
+    "expiration_date",
+    "expire_date",
+    "expiry",
+    "expiry_date",
+    "end_date",
+    "end",
+    "until",
+)
+
+
+def extract_license_expiry(payload: Dict[str, Any]) -> Optional[datetime]:
+    """Best-effort license expiry extraction from arbitrary firmware/license payloads."""
+    if not isinstance(payload, dict):
+        return None
+
+    for key in _EXPIRY_KEYS:
+        parsed = _parse_datelike(payload.get(key))
+        if parsed is not None:
+            return parsed
+
+    for container_key in ("subscription", "license", "product", "info", "details"):
+        container = payload.get(container_key)
+        if isinstance(container, dict):
+            nested = extract_license_expiry(container)
+            if nested is not None:
+                return nested
+        elif isinstance(container, str):
+            parsed = _parse_datelike(container)
+            if parsed is not None:
+                return parsed
+
+    return None
+
+
 class OPNsenseAPI:
     """Client for interacting with OPNsense REST API"""
 
@@ -231,6 +344,24 @@ class OPNsenseAPI:
     async def get_firmware_status(self) -> Dict[str, Any]:
         """GET /api/core/firmware/status"""
         return await self._request("GET", "/core/firmware/status")
+
+    async def get_firmware_info(self) -> Dict[str, Any]:
+        """GET /api/core/firmware/info - richer payload incl. subscription on Business."""
+        return await self._request("GET", "/core/firmware/info")
+
+    async def get_business_license(self) -> Dict[str, Any]:
+        """Try Business-edition license endpoints with fallbacks; returns {} if unavailable."""
+        candidates = [
+            ("GET", "/business/license/status"),
+            ("GET", "/business/license/info"),
+            ("GET", "/business/service/status"),
+        ]
+        for method, endpoint in candidates:
+            try:
+                return await self._request(method, endpoint)
+            except Exception:
+                continue
+        return {}
 
     async def check_firmware_updates(self) -> Dict[str, Any]:
         """POST /api/core/firmware/check"""

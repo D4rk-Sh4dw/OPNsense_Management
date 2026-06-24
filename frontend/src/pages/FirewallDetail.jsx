@@ -191,7 +191,18 @@ export default function FirewallDetail() {
     setLoadingLicense(true)
     try {
       const res = await firewallsAPI.fetchLicense(id)
-      showToast(`License: ${res.data.license_type} – ${res.data.product_name} ${res.data.product_version}`)
+      const expiry = res.data.license_expiry
+        ? new Date(res.data.license_expiry).toLocaleDateString()
+        : null
+      const parts = [
+        `${res.data.license_type} – ${res.data.product_name} ${res.data.product_version}`,
+      ]
+      if (expiry) {
+        parts.push(`expiry: ${expiry}`)
+      } else if (res.data.expiry_detected === false) {
+        parts.push('no expiry exposed by firewall')
+      }
+      showToast(parts.join(' | '))
       loadAll()
     } catch (e) {
       showToast('Could not fetch license from firewall', false)
