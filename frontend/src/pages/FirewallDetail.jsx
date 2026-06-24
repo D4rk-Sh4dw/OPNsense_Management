@@ -271,6 +271,7 @@ export default function FirewallDetail() {
     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
 
   const serviceRows = Array.isArray(status?.services_status) ? status.services_status : []
+  const pendingServices = Array.isArray(status?.pending_services) ? status.pending_services : []
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -379,7 +380,7 @@ export default function FirewallDetail() {
       {status?.gateway_status && <GatewayStatusCard data={status.gateway_status} />}
 
       {/* Service Status */}
-      <ServiceStatusCard services={serviceRows} />
+      <ServiceStatusCard services={serviceRows} pendingServices={pendingServices} hasStatus={!!status} />
 
       {/* Live Logs */}
       <LiveLogsCard
@@ -662,8 +663,21 @@ function GatewayStatusCard({ data }) {
   )
 }
 
-function ServiceStatusCard({ services }) {
-  const rows = useMemo(() => Array.isArray(services) ? services : [], [services])
+function ServiceStatusCard({ services, pendingServices, hasStatus }) {
+  const rows = useMemo(() => {
+    const detailed = Array.isArray(services) ? services : []
+    if (detailed.length > 0) return detailed
+
+    const pending = Array.isArray(pendingServices) ? pendingServices : []
+    return pending.map((name) => ({
+      name,
+      description: name,
+      enabled: true,
+      running: false,
+      status: 'stopped',
+      has_error: true,
+    }))
+  }, [services, pendingServices])
 
   const summary = useMemo(() => {
     return rows.reduce((acc, svc) => {
@@ -674,8 +688,6 @@ function ServiceStatusCard({ services }) {
       return acc
     }, { total: 0, enabled: 0, running: 0, errors: 0 })
   }, [rows])
-
-  if (rows.length === 0) return null
 
   const enabledLabel = (enabled) => {
     if (enabled === true) return 'Yes'
@@ -712,34 +724,42 @@ function ServiceStatusCard({ services }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-400 uppercase border-b">
-              <th className="py-2 pr-4">Service</th>
-              <th className="py-2 pr-4">Description</th>
-              <th className="py-2 pr-4">Enabled</th>
-              <th className="py-2 pr-4">State</th>
-              <th className="py-2 pr-4">Source Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((svc) => (
-              <tr key={svc.name} className="border-b hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                <td className="py-3 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{svc.name}</td>
-                <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{svc.description || '—'}</td>
-                <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{enabledLabel(svc.enabled)}</td>
-                <td className="py-3 pr-4">
-                  <span className={`px-2 py-1 rounded text-xs font-bold ${runningBadge(svc)}`}>
-                    {runningLabel(svc)}
-                  </span>
-                </td>
-                <td className="py-3 pr-4 text-xs font-mono text-gray-500 dark:text-gray-400">{svc.status || '—'}</td>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-5 text-sm text-gray-600 dark:text-gray-400">
+          {hasStatus
+            ? 'Noch keine Dienstedetails vorhanden. Bitte einmal "Check Health" ausführen. Falls weiterhin nichts erscheint, den Backend-Container nach dem Update neu starten.'
+            : 'Es liegt noch kein Health-Check vor. Bitte einmal "Check Health" ausführen, damit der Dienstestatus geladen werden kann.'}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-400 uppercase border-b">
+                <th className="py-2 pr-4">Service</th>
+                <th className="py-2 pr-4">Description</th>
+                <th className="py-2 pr-4">Enabled</th>
+                <th className="py-2 pr-4">State</th>
+                <th className="py-2 pr-4">Source Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((svc) => (
+                <tr key={svc.name} className="border-b hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                  <td className="py-3 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{svc.name}</td>
+                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{svc.description || '—'}</td>
+                  <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{enabledLabel(svc.enabled)}</td>
+                  <td className="py-3 pr-4">
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${runningBadge(svc)}`}>
+                      {runningLabel(svc)}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-4 text-xs font-mono text-gray-500 dark:text-gray-400">{svc.status || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
