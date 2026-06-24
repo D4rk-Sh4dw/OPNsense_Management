@@ -80,103 +80,94 @@ class UpdateService:
                 logger.warning(f"Pre-update backup failed: {e}")
                 # Continue with update anyway
 
-            # Probe both endpoints to see which one OPNsense accepts.
-            # Try update first, then upgrade. Whichever starts a detectable job wins.
-            logger.info(f"Probing firmware endpoints for {firewall.hostname}...")
-            update_record.log = ""
-            action = None
+            # Capture pre-trigger status so we can later detect if a NEW job
+            # actually started (vs. a stale "done" leftover from a previous run).
+            try:
+                pre_st = await api_client.get_upgrade_status()
+                pre_status_value = str(pre_st.get("status", "")).lower()
+            except Exception:
+                pre_status_value = ""
+
+            # Trigger BOTH endpoints in sequence, exactly like the working
+            # manual Bruno flow: firmware/update handles package updates,
+            # firmware/upgrade handles major version transitions. OPNsense
+            # ignores whichever one is not applicable, so calling both is safe.
+            logger.info(f"Triggering firmware/update + firmware/upgrade on {firewall.hostname}")
+            triggered = []
             update_response = None
+            upgrade_response = None
 
-            for probe_action in ("update", "upgrade"):
-                try:
-                    logger.info(f"Trying firmware/{probe_action} on {firewall.hostname}...")
-                    if probe_action == "upgrade":
-                        response = await api_client.upgrade_firmware()
-                    else:
-                        response = await api_client.install_updates()
+            try:
+                update_response = await api_client.install_updates()
+                triggered.append("update")
+                logger.info(f"firmware/update sent ({update_response})")
+            except Exception as e:
+                logger.warning(f"firmware/update failed on {firewall.hostname}: {e}")
+                update_response = f"error: {e}"
 
-                    # Wait a moment and check if status shows activity.
-                    await asyncio.sleep(2)
-                    try:
-                        st = await api_client.get_upgrade_status()
-                        st_value = str(st.get("status", "")).lower()
-                        if st_value and st_value not in ("none", "unknown"):
-                            # This endpoint accepted the job!
-                            action = probe_action
-                            update_response = response
-                            logger.info(f"✓ firmware/{probe_action} accepted (status={st_value})")
-                            break
-                    except Exception:
-                        pass
+            try:
+                upgrade_response = await api_client.upgrade_firmware()
+                triggered.append("upgrade")
+                logger.info(f"firmware/upgrade sent ({upgrade_response})")
+            except Exception as e:
+                logger.warning(f"firmware/upgrade failed on {firewall.hostname}: {e}")
+                upgrade_response = f"error: {e}"
 
-                except Exception as e:
-                    logger.debug(f"firmware/{probe_action} failed or rejected: {e}")
+            if not triggered:
+                raise Exception("Neither firmware/update nor firmware/upgrade accepted by firewall")
 
-            if not action:
-                raise Exception("Neither firmware/update nor firmware/upgrade was accepted by the firewall")
+            action = "+".join(triggered)
+            update_record.log = (
+                f"action={action}; "
+                f"update_response={update_response}; "
+                f"upgrade_response={upgrade_response}; "
+                f"pre_status={pre_status_value or 'none'}"
+            )
 
-            update_record.log = f"action={action}; response={update_response}"
+            # Brief wait so OPNsense can mark the job as running before we poll.
+            await asyncio.sleep(3)
 
-            # Poll for completion. If we don't see any upgrade-status activity
-            # shortly after starting, switch early to the other endpoint.
-            max_wait = 3600  # 1 hour final wait
+            # Poll for completion. We require the status to transition through
+            # "running" to "done"; a stale "done" from a previous run is ignored
+            # by tracking whether we ever saw an in-progress state.
+            max_wait = 3600  # 1 hour
             poll_interval = 10
-            initial_probe_wait = 30
-
-            async def _poll_until_done(wait_seconds: int, phase: str):
-                elapsed_local = 0
-                saw_activity = False
-
-                while elapsed_local < wait_seconds:
-                    await asyncio.sleep(poll_interval)
-                    elapsed_local += poll_interval
-
-                    try:
-                        st = await api_client.get_upgrade_status()
-                        st_value = str(st.get("status", "")).lower()
-                        if st_value and st_value not in ("none", "unknown"):
-                            saw_activity = True
-
-                        if st_value == "done":
-                            return True, saw_activity
-                        if st_value == "error":
-                            raise Exception(f"Update error ({phase}): {st.get('log', 'Unknown error')}")
-                    except Exception as e:
-                        logger.warning(f"Status check failed ({phase}): {e}")
-
-                return False, saw_activity
-
+            elapsed = 0
             completed = False
-            used_action = action
+            saw_running = False
+            phase = action
 
-            # Quick probe: if no status activity is visible, try fallback immediately.
-            completed, saw_activity = await _poll_until_done(initial_probe_wait, "initial")
-
-            if not completed and not saw_activity:
-                fallback_action = "update" if action == "upgrade" else "upgrade"
-                logger.warning(
-                    f"No upgrade-status activity after {initial_probe_wait}s for {firewall.hostname}; "
-                    f"trying fallback {fallback_action} (initial choice was {action})"
-                )
+            while elapsed < max_wait:
                 try:
-                    if fallback_action == "upgrade":
-                        fallback_response = await api_client.upgrade_firmware()
-                    else:
-                        fallback_response = await api_client.install_updates()
-                    update_record.log = (
-                        f"{update_record.log}; fallback_action={fallback_action}; "
-                        f"fallback_response={fallback_response}"
-                    )
-                    used_action = fallback_action
+                    st = await api_client.get_upgrade_status()
+                    st_value = str(st.get("status", "")).lower()
+
+                    if st_value in ("running", "reboot", "upgrading", "installing"):
+                        saw_running = True
+
+                    if st_value == "done":
+                        # Treat as completion only if we previously saw running,
+                        # OR if the status differs from the pre-trigger "done" snapshot
+                        # (which would mean OPNsense finished a brand-new fast job).
+                        if saw_running or pre_status_value != "done":
+                            logger.info(f"Firmware job done on {firewall.hostname} (action={action})")
+                            completed = True
+                            break
+
+                    if st_value == "error":
+                        raise Exception(f"OPNsense reported upgrade error: {st.get('log', 'Unknown error')}")
+
                 except Exception as e:
-                    logger.warning(f"Fallback {fallback_action} start failed on {firewall.hostname}: {e}")
-                    update_record.log = f"{update_record.log}; fallback_action={fallback_action}; fallback_error={e}"
+                    logger.warning(f"upgradestatus check failed for {firewall.hostname}: {e}")
+
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
 
             if not completed:
-                completed, _ = await _poll_until_done(max_wait, f"final-{used_action}")
-
-            if not completed:
-                raise Exception("Firmware job did not complete within timeout")
+                raise Exception(
+                    f"Firmware job did not complete within {max_wait}s "
+                    f"(saw_running={saw_running}, action={action})"
+                )
 
             # Check if reboot needed
             status_after = await api_client.get_firmware_status()
