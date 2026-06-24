@@ -15,6 +15,7 @@ _ALTER_STATEMENTS = [
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS notify_emails_general TEXT",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS notify_emails_license TEXT",
     "ALTER TABLE firewalls ADD COLUMN IF NOT EXISTS license_alert_days VARCHAR(100)",
+    "ALTER TABLE firewall_status ADD COLUMN IF NOT EXISTS services_status JSON",
 ]
 
 

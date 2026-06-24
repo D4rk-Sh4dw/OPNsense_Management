@@ -105,6 +105,77 @@ def _to_float(value):
         return None
 
 
+def _to_bool(value):
+    """Best-effort conversion for API booleans like 1/0, yes/no, running/stopped."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on", "enabled", "running", "up", "ok"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "disabled", "stopped", "down", "failed", "error"}:
+            return False
+    return None
+
+
+def _parse_services(rows: list) -> list:
+    """Normalize OPNsense service rows for the UI.
+
+    Different OPNsense versions expose slightly different keys. We keep the
+    parser permissive and preserve a compact, stable shape for the frontend.
+    """
+    parsed = []
+    for svc in rows or []:
+        if not isinstance(svc, dict):
+            continue
+
+        name = svc.get("name") or svc.get("service") or svc.get("id") or svc.get("label")
+        if not name:
+            continue
+
+        description = svc.get("description") or svc.get("label") or name
+        running = _to_bool(svc.get("running"))
+
+        enabled = None
+        if "enabled" in svc:
+            enabled = _to_bool(svc.get("enabled"))
+        elif "disabled" in svc:
+            disabled = _to_bool(svc.get("disabled"))
+            enabled = None if disabled is None else not disabled
+        elif "active" in svc:
+            enabled = _to_bool(svc.get("active"))
+
+        status_text = str(
+            svc.get("status")
+            or svc.get("state")
+            or svc.get("message")
+            or ("running" if running is True else "stopped" if running is False else "unknown")
+        )
+
+        normalized_status = status_text.strip().lower()
+        has_error = False
+        if normalized_status:
+            has_error = any(token in normalized_status for token in ("fail", "error", "crash"))
+            if normalized_status in {"stopped", "down"} and enabled is True:
+                has_error = True
+        if running is False and enabled is True:
+            has_error = True
+
+        parsed.append({
+            "name": str(name),
+            "description": str(description),
+            "enabled": enabled,
+            "running": running,
+            "status": status_text,
+            "has_error": has_error,
+        })
+
+    parsed.sort(key=lambda item: (item["has_error"] is False, item["name"].lower()))
+    return parsed
+
+
 def _parse_memory(resources: dict):
     """Extract RAM usage percentage from systemResources response.
 
@@ -249,8 +320,10 @@ class MonitoringService:
             try:
                 services = await api_client.get_services_status()
                 rows = services.get("rows", []) if isinstance(services, dict) else []
+                status.services_status = _parse_services(rows)
                 status.pending_services = [
-                    svc.get("name") for svc in rows if not svc.get("running")
+                    svc["name"] for svc in status.services_status
+                    if svc.get("enabled") is True and svc.get("running") is False
                 ]
             except Exception as e:
                 logger.warning(f"Service status failed for {firewall.hostname}: {e}")

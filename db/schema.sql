@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS firewall_status (
     uptime_seconds BIGINT,
     gateway_status JSONB,
     pending_services JSONB DEFAULT '[]'::jsonb,
+    services_status JSONB DEFAULT '[]'::jsonb,
     last_error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_firewall_status_fk ON firewall_status(firewall_id);

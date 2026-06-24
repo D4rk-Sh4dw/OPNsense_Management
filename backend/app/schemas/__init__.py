@@ -139,6 +139,7 @@ class FirewallStatusResponse(BaseModel):
     uptime_seconds: Optional[int]
     gateway_status: Optional[dict]
     pending_services: Optional[List[str]]
+    services_status: Optional[List[dict]]
     last_error: Optional[str]
 
     class Config:

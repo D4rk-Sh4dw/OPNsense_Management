@@ -63,6 +63,7 @@ class FirewallStatus(Base):
     uptime_seconds = Column(BigInteger)
     gateway_status = Column(JSON)
     pending_services = Column(JSON, default=list)
+    services_status = Column(JSON, default=list)
     last_error = Column(Text, nullable=True)
 
 

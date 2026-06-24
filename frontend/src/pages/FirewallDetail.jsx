@@ -270,6 +270,8 @@ export default function FirewallDetail() {
     ? 'bg-blue-100 text-blue-800'
     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
 
+  const serviceRows = Array.isArray(status?.services_status) ? status.services_status : []
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {/* Toast */}
@@ -375,6 +377,9 @@ export default function FirewallDetail() {
 
       {/* Gateway Status */}
       {status?.gateway_status && <GatewayStatusCard data={status.gateway_status} />}
+
+      {/* Service Status */}
+      <ServiceStatusCard services={serviceRows} />
 
       {/* Live Logs */}
       <LiveLogsCard
@@ -650,6 +655,88 @@ function GatewayStatusCard({ data }) {
                 </tr>
               )
             })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ServiceStatusCard({ services }) {
+  const rows = useMemo(() => Array.isArray(services) ? services : [], [services])
+
+  const summary = useMemo(() => {
+    return rows.reduce((acc, svc) => {
+      acc.total += 1
+      if (svc.enabled === true) acc.enabled += 1
+      if (svc.running === true) acc.running += 1
+      if (svc.has_error) acc.errors += 1
+      return acc
+    }, { total: 0, enabled: 0, running: 0, errors: 0 })
+  }, [rows])
+
+  if (rows.length === 0) return null
+
+  const enabledLabel = (enabled) => {
+    if (enabled === true) return 'Yes'
+    if (enabled === false) return 'No'
+    return 'Unknown'
+  }
+
+  const runningBadge = (svc) => {
+    if (svc.has_error) return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+    if (svc.running === true) return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+    if (svc.running === false) return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+    return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200'
+  }
+
+  const runningLabel = (svc) => {
+    if (svc.has_error) return 'Error'
+    if (svc.running === true) return 'Running'
+    if (svc.running === false) return 'Stopped'
+    return 'Unknown'
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mb-8">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Service Status</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Aktiviert, Laufstatus und erkannte Fehler je Dienst.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-bold">
+          <span className="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">Total {summary.total}</span>
+          <span className="px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200">Enabled {summary.enabled}</span>
+          <span className="px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">Running {summary.running}</span>
+          <span className="px-3 py-1 rounded-full bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200">Errors {summary.errors}</span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-400 uppercase border-b">
+              <th className="py-2 pr-4">Service</th>
+              <th className="py-2 pr-4">Description</th>
+              <th className="py-2 pr-4">Enabled</th>
+              <th className="py-2 pr-4">State</th>
+              <th className="py-2 pr-4">Source Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((svc) => (
+              <tr key={svc.name} className="border-b hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                <td className="py-3 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{svc.name}</td>
+                <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{svc.description || '—'}</td>
+                <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{enabledLabel(svc.enabled)}</td>
+                <td className="py-3 pr-4">
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${runningBadge(svc)}`}>
+                    {runningLabel(svc)}
+                  </span>
+                </td>
+                <td className="py-3 pr-4 text-xs font-mono text-gray-500 dark:text-gray-400">{svc.status || '—'}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
