@@ -20,8 +20,116 @@ from app.services.encryption_service import EncryptionService
 from app.services.monitoring_service import MonitoringService
 from app.services.opnsense_api import OPNsenseAPI
 
+import logging
+from typing import List
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models import Firewall, FirewallStatus, Alert
+from app.schemas import (
+    FirewallCreate,
+    FirewallUpdate,
+    FirewallResponse,
+    FirewallDetailedResponse,
+    FirewallStatusResponse,
+    BackupResponse,
+    AlertResponse,
+    DashboardSummary,
+    FirewallQuickStatus,
+)
+from app.services.encryption_service import EncryptionService
+from app.services.monitoring_service import MonitoringService
+from app.services.opnsense_api import OPNsenseAPI
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
+
+
+@router.get("/map")
+async def get_map_data(db: Session = Depends(get_db)):
+    """Return all firewalls with coordinates and latest alert state for the geomap."""
+    firewalls = db.query(Firewall).all()
+    result = []
+    for fw in firewalls:
+        latest_status = (
+            db.query(FirewallStatus)
+            .filter(FirewallStatus.firewall_id == fw.id)
+            .order_by(FirewallStatus.checked_at.desc())
+            .first()
+        )
+        open_alerts = (
+            db.query(Alert)
+            .filter(Alert.firewall_id == fw.id, Alert.resolved == False)
+            .order_by(Alert.created_at.desc())
+            .all()
+        )
+        result.append({
+            "id": str(fw.id),
+            "customer_name": fw.customer_name,
+            "hostname": fw.hostname or fw.ip,
+            "ip": fw.ip,
+            "location_address": fw.location_address,
+            "location_lat": fw.location_lat,
+            "location_lon": fw.location_lon,
+            "online": latest_status.online if latest_status else None,
+            "checked_at": latest_status.checked_at.isoformat() if latest_status and latest_status.checked_at else None,
+            "alerts": [
+                {
+                    "id": str(a.id),
+                    "type": a.alert_type,
+                    "severity": a.severity,
+                    "message": a.message,
+                }
+                for a in open_alerts
+            ],
+        })
+    return result
+
+
+@router.post("/{firewall_id}/geocode")
+async def geocode_firewall(
+    firewall_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    """Geocode an address string via Nominatim and store lat/lon on the firewall."""
+    import httpx
+
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    address = (payload.get("address") or "").strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="address is required")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": address, "format": "json", "limit": 1},
+                headers={"User-Agent": "OPNsense-CMS/1.0"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        if not data:
+            raise HTTPException(status_code=404, detail=f"No geocoding result for '{address}'")
+        hit = data[0]
+        firewall.location_address = address
+        firewall.location_lat = float(hit["lat"])
+        firewall.location_lon = float(hit["lon"])
+        db.commit()
+        return {
+            "location_address": address,
+            "location_lat": firewall.location_lat,
+            "location_lon": firewall.location_lon,
+            "display_name": hit.get("display_name"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Geocoding failed: {e}")
 
 
 @router.get("", response_model=List[FirewallResponse])

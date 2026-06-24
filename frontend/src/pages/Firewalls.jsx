@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   backup_retention: 30,
   notes: '',
   verify_ssl: false,
+  location_address: '',
 }
 
 export default function Firewalls() {
@@ -257,6 +258,12 @@ export default function Firewalls() {
                 placeholder="Internal notes about this firewall..."
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
               />
+            </div>
+
+            {/* Location */}
+            <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3">Standort (für Karte)</p>
+            <div className="mb-6">
+              <Field label="Adresse" name="location_address" value={formData.location_address} onChange={handleInputChange} placeholder="Musterstraße 1, 12345 Berlin" />
             </div>
 
             <button

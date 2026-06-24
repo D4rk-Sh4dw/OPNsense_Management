@@ -30,6 +30,8 @@ export const firewallsAPI = {
   getServices: (id) => api.get(`/firewalls/${id}/services`),
   startService: (id, payload) => api.post(`/firewalls/${id}/services/start`, payload),
   restartService: (id, payload) => api.post(`/firewalls/${id}/services/restart`, payload),
+  getMapData: () => api.get('/firewalls/map'),
+  geocode: (id, address) => api.post(`/firewalls/${id}/geocode`, { address }),
   reboot: (id) => api.post(`/firewalls/${id}/reboot`),
   updateApiSecret: (id, apiSecret) =>
     api.post(`/firewalls/${id}/update-api-secret`, { api_secret: apiSecret }),

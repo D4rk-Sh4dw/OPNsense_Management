@@ -43,6 +43,9 @@ class Firewall(Base):
     tags = Column(JSON, default=list)
     notes = Column(Text)
     license_type = Column(String(20), nullable=True)  # "community", "business", None
+    location_address = Column(Text, nullable=True)   # Human-readable address for geomap
+    location_lat = Column(Float, nullable=True)      # Latitude (set via geocoding)
+    location_lon = Column(Float, nullable=True)      # Longitude (set via geocoding)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, nullable=True)
     last_sync_error = Column(Text, nullable=True)

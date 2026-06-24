@@ -11,6 +11,7 @@ import FirewallDetail from './pages/FirewallDetail'
 import Backups from './pages/Backups'
 import Alerts from './pages/Alerts'
 import EmailSettings from './pages/EmailSettings'
+import GeoMap from './pages/GeoMap'
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
             <Route path="/backups" element={<Backups />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/email" element={<EmailSettings />} />
+            <Route path="/map" element={<GeoMap />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

@@ -45,13 +45,14 @@ class FirewallBase(BaseModel):
     backup_retention: int = 30
     tags: Optional[List[str]] = []
     notes: Optional[str] = None
+    location_address: Optional[str] = None
 
     @field_validator("notify_email", mode="before")
     @classmethod
     def empty_str_to_none_email(cls, v):
         return None if v == "" else v
 
-    @field_validator("hostname", "notes", "notify_emails_general", "notify_emails_license", "license_alert_days", mode="before")
+    @field_validator("hostname", "notes", "notify_emails_general", "notify_emails_license", "license_alert_days", "location_address", mode="before")
     @classmethod
     def empty_str_to_none_str(cls, v):
         return None if v == "" else v
@@ -87,13 +88,14 @@ class FirewallUpdate(BaseModel):
     notes: Optional[str] = None
     license_expiry: Optional[datetime] = None
     license_type: Optional[str] = None
+    location_address: Optional[str] = None
 
     @field_validator("notify_email", mode="before")
     @classmethod
     def empty_str_to_none_email(cls, v):
         return None if v == "" else v
 
-    @field_validator("notify_emails_general", "notify_emails_license", "license_alert_days", mode="before")
+    @field_validator("notify_emails_general", "notify_emails_license", "license_alert_days", "location_address", mode="before")
     @classmethod
     def empty_str_to_none_str(cls, v):
         return None if v == "" else v
@@ -111,6 +113,9 @@ class FirewallResponse(FirewallBase):
     ssl_cert_path: Optional[str]
     license_expiry: Optional[datetime]
     license_type: Optional[str]
+    location_address: Optional[str]
+    location_lat: Optional[float]
+    location_lon: Optional[float]
     created_at: datetime
     last_seen: Optional[datetime]
     last_sync_error: Optional[str]

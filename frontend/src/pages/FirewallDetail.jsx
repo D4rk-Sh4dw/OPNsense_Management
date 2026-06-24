@@ -8,10 +8,8 @@ export default function FirewallDetail() {
   const [status, setStatus] = useState(null)
   const [logs, setLogs] = useState([])
   const [logType, setLogType] = useState('firewall')
-  const [smart, setSmart] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadingLogs, setLoadingLogs] = useState(false)
-  const [loadingSmart, setLoadingSmart] = useState(false)
   const [loadingLicense, setLoadingLicense] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [loadingServices, setLoadingServices] = useState(false)
@@ -97,24 +95,10 @@ export default function FirewallDetail() {
       setStatus(stRes.data)
       loadServices()
       setError(null)
-      loadSmart()
     } catch (e) {
       setError('Failed to load firewall')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loadSmart = async () => {
-    setLoadingSmart(true)
-    try {
-      const res = await firewallsAPI.getSmart(id)
-      setSmart(res.data)
-    } catch (e) {
-      const reason = e?.response?.data?.detail || e?.message || 'unavailable'
-      setSmart({ available: false, reason, devices: [] })
-    } finally {
-      setLoadingSmart(false)
     }
   }
 
@@ -289,6 +273,7 @@ export default function FirewallDetail() {
       tags: firewall.tags || '',
       notes: firewall.notes || '',
       api_secret: '',
+      location_address: firewall.location_address || '',
     })
     setEditOpen(true)
   }
@@ -303,6 +288,18 @@ export default function FirewallDetail() {
       await firewallsAPI.update(id, payload)
       if (newSecret && newSecret.trim()) {
         await firewallsAPI.updateApiSecret(id, newSecret.trim())
+      }
+      // Auto-geocode if address was set/changed
+      const newAddr = editForm.location_address?.trim()
+      if (newAddr && newAddr !== (firewall.location_address || '').trim()) {
+        try {
+          await firewallsAPI.geocode(id, newAddr)
+        } catch {
+          showToast('Gespeichert, aber Geocoding fehlgeschlagen. Adresse auf der Kartenseite korrigieren.', false)
+          setEditOpen(false)
+          loadAll()
+          return
+        }
       }
       showToast('Firewall settings updated')
       setEditOpen(false)
@@ -474,62 +471,6 @@ export default function FirewallDetail() {
         formatLogEntry={formatLogEntry}
       />
 
-      {/* S.M.A.R.T. Disk Health */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 mt-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">S.M.A.R.T. Disk Health</h2>
-          <button onClick={loadSmart} disabled={loadingSmart}
-            className="text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:bg-gray-600 px-3 py-1 rounded-lg font-semibold disabled:opacity-50">
-            {loadingSmart ? '...' : '🔄 Refresh'}
-          </button>
-        </div>
-        {loadingSmart ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Loading SMART data...</p>
-        ) : !smart?.available ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            SMART unavailable {smart?.reason ? `(${smart.reason})` : ''}.
-            {String(smart?.reason || '').toLowerCase().includes('plugin')
-              ? <> Install the <span className="font-mono">os-smart</span> plugin on the firewall.</>
-              : <> Check API permissions and endpoint compatibility on this OPNsense version.</>}
-          </p>
-        ) : smart.devices.length === 0 ? (
-          <p className="text-gray-500 dark:text-gray-400 text-sm">No SMART-capable devices detected.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 uppercase">
-                  <th className="py-2 pr-4">Device</th>
-                  <th className="py-2 pr-4">Model</th>
-                  <th className="py-2 pr-4">Serial</th>
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {smart.devices.map((d, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="py-2 pr-4 font-mono">{d.device}</td>
-                    <td className="py-2 pr-4">{d.model || '—'}</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{d.serial || '—'}</td>
-                    <td className="py-2 pr-4">{d.type || '—'}</td>
-                    <td className="py-2 pr-4">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        String(d.status).toUpperCase() === 'PASSED' || String(d.status).toUpperCase() === 'OK'
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                          : String(d.status).toUpperCase() === 'FAILED'
-                          ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                      }`}>{d.status || 'unknown'}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       {/* Edit Modal */}
       {editOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
@@ -592,6 +533,13 @@ export default function FirewallDetail() {
                   onChange={e => setEditForm({...editForm, notes: e.target.value})}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
                   rows="3" />
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-2">Standort (für Karte)</p>
+                <Field label="Adresse" value={editForm.location_address}
+                  onChange={v => setEditForm({...editForm, location_address: v})}
+                  placeholder="Musterstraße 1, 12345 Berlin" />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Wird beim Speichern automatisch geocodiert und auf der Karte angezeigt.</p>
               </div>
             </div>
             <div className="p-6 border-t flex justify-end gap-3">
