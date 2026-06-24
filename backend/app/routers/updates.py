@@ -132,6 +132,40 @@ async def get_update_history(
     return updates
 
 
+@router.get("/history")
+async def get_all_update_history(
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    status: str | None = None,
+):
+    """Get update history across all firewalls (for the Dashboard logs tab)."""
+
+    q = db.query(UpdateHistory, Firewall).join(
+        Firewall, Firewall.id == UpdateHistory.firewall_id
+    )
+    if status:
+        q = q.filter(UpdateHistory.status == status)
+    rows = q.order_by(UpdateHistory.started_at.desc()).limit(limit).all()
+
+    return [
+        {
+            "id": str(uh.id),
+            "firewall_id": str(uh.firewall_id),
+            "firewall_name": fw.customer_name,
+            "hostname": fw.hostname,
+            "ip": fw.ip,
+            "version_before": uh.version_before,
+            "version_after": uh.version_after,
+            "triggered_by": uh.triggered_by,
+            "status": uh.status,
+            "log": uh.log,
+            "started_at": uh.started_at.isoformat() if uh.started_at else None,
+            "completed_at": uh.completed_at.isoformat() if uh.completed_at else None,
+        }
+        for uh, fw in rows
+    ]
+
+
 @router.get("/pending")
 async def get_pending_updates(db: Session = Depends(get_db)):
     """Get all firewalls with pending updates"""

@@ -62,6 +62,7 @@ export const updatesAPI = {
   checkUpdates: (firewallId) => api.post(`/updates/firewalls/${firewallId}/check`),
   installUpdates: (firewallId) => api.post(`/updates/firewalls/${firewallId}/install`),
   getHistory: (firewallId) => api.get(`/updates/firewalls/${firewallId}/history`),
+  getAllHistory: (params) => api.get('/updates/history', { params }),
   getPending: () => api.get('/updates/pending'),
 }
 
