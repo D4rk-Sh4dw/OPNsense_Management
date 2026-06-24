@@ -194,6 +194,31 @@ class OPNsenseAPI:
         except Exception:
             return await self._request("POST", "/core/service/search", json={})
 
+    async def restart_service(self, identifier: str) -> Dict[str, Any]:
+        """Restart a service via OPNsense core/service endpoints.
+
+        OPNsense versions differ in how they address service actions. We try a
+        few common variants and return the first successful response.
+        """
+        last_error = None
+        candidates = [
+            ("POST", f"/core/service/restart/{identifier}", None),
+            ("POST", "/core/service/restart", {"service": identifier}),
+            ("POST", "/core/service/restart", {"name": identifier}),
+            ("POST", f"/core/service/reconfigure/{identifier}", None),
+            ("POST", "/core/service/reconfigure", {"service": identifier}),
+        ]
+        for method, endpoint, payload in candidates:
+            try:
+                kwargs = {"json": payload} if payload is not None else {}
+                return await self._request(method, endpoint, **kwargs)
+            except Exception as e:
+                last_error = e
+                continue
+        if last_error:
+            raise last_error
+        return {"status": "unknown"}
+
     async def get_arp_table(self) -> Dict[str, Any]:
         """GET /api/diagnostics/interface/getArp"""
         return await self._request("GET", "/diagnostics/interface/getArp")

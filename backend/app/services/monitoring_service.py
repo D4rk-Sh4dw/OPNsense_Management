@@ -131,6 +131,7 @@ def _parse_services(rows: list) -> list:
         if not isinstance(svc, dict):
             continue
 
+        service_id = svc.get("id") or svc.get("service") or svc.get("name") or svc.get("label")
         name = svc.get("name") or svc.get("service") or svc.get("id") or svc.get("label")
         if not name:
             continue
@@ -164,6 +165,7 @@ def _parse_services(rows: list) -> list:
             has_error = True
 
         parsed.append({
+            "service_id": str(service_id),
             "name": str(name),
             "description": str(description),
             "enabled": enabled,

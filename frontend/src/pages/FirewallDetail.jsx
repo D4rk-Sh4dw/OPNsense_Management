@@ -15,6 +15,7 @@ export default function FirewallDetail() {
   const [loadingLicense, setLoadingLicense] = useState(false)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [loadingServices, setLoadingServices] = useState(false)
+  const [restartingService, setRestartingService] = useState(null)
   const [loadingUpdate, setLoadingUpdate] = useState(false)
   const [loadingCheck, setLoadingCheck] = useState(false)
   const [loadingReboot, setLoadingReboot] = useState(false)
@@ -73,6 +74,13 @@ export default function FirewallDetail() {
     return () => clearInterval(interval)
   }, [id, firewall, autoRefresh, logType])
 
+  useEffect(() => {
+    if (!firewall || !autoRefresh) return
+    const tick = () => { if (!document.hidden) loadServices() }
+    const interval = setInterval(tick, 15000)
+    return () => clearInterval(interval)
+  }, [id, firewall, autoRefresh])
+
   const showToast = (msg, ok = true) => {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 3500)
@@ -118,6 +126,24 @@ export default function FirewallDetail() {
       setLiveServices(null)
     } finally {
       setLoadingServices(false)
+    }
+  }
+
+  const handleRestartService = async (service) => {
+    const serviceName = service.description || service.name || service.service_id
+    if (!window.confirm(`Dienst wirklich neu starten?\n\n${serviceName}`)) return
+    setRestartingService(service.service_id || service.name)
+    try {
+      await firewallsAPI.restartService(id, {
+        service_id: service.service_id,
+        name: service.name,
+      })
+      showToast(`Restart gestartet: ${serviceName}`)
+      await loadServices()
+    } catch (e) {
+      showToast(`Restart fehlgeschlagen: ${e.response?.data?.detail || e.message}`, false)
+    } finally {
+      setRestartingService(null)
     }
   }
 
@@ -409,6 +435,8 @@ export default function FirewallDetail() {
         hasStatus={!!status}
         loading={loadingServices}
         onRefresh={loadServices}
+        onRestart={handleRestartService}
+        restartingService={restartingService}
       />
 
       {/* Live Logs */}
@@ -692,13 +720,14 @@ function GatewayStatusCard({ data }) {
   )
 }
 
-function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRefresh }) {
+function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRefresh, onRestart, restartingService }) {
   const rows = useMemo(() => {
     const detailed = Array.isArray(services) ? services : []
     if (detailed.length > 0) return detailed
 
     const pending = Array.isArray(pendingServices) ? pendingServices : []
     return pending.map((name) => ({
+      service_id: name,
       name,
       description: name,
       enabled: true,
@@ -791,11 +820,12 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
                 <th className="py-2 pr-4">Enabled</th>
                 <th className="py-2 pr-4">State</th>
                 <th className="py-2 pr-4">Source Status</th>
+                <th className="py-2 pr-4">Action</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((svc) => (
-                <tr key={svc.name} className="border-b hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                <tr key={svc.service_id || svc.name} className="border-b hover:bg-gray-50 dark:hover:bg-gray-900/50">
                   <td className="py-3 pr-4 font-mono text-xs text-gray-900 dark:text-gray-100">{svc.name}</td>
                   <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{svc.description || '—'}</td>
                   <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{enabledLabel(svc.enabled)}</td>
@@ -805,6 +835,15 @@ function ServiceStatusCard({ services, pendingServices, hasStatus, loading, onRe
                     </span>
                   </td>
                   <td className="py-3 pr-4 text-xs font-mono text-gray-500 dark:text-gray-400">{svc.status || '—'}</td>
+                  <td className="py-3 pr-4">
+                    <button
+                      onClick={() => onRestart(svc)}
+                      disabled={!onRestart || restartingService === (svc.service_id || svc.name)}
+                      className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition disabled:opacity-50"
+                    >
+                      {restartingService === (svc.service_id || svc.name) ? 'Restart...' : 'Restart'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
