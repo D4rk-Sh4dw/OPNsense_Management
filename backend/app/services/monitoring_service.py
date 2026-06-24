@@ -304,7 +304,7 @@ class MonitoringService:
 
         db.commit()
 
-        # Alert only on state transition
+        # Alert + post-recovery actions only on state transition
         if now_online != prev_online:
             if not now_online:
                 raise_alert(
@@ -316,6 +316,15 @@ class MonitoringService:
                 )
             else:
                 resolve_alert_if_open(db, firewall.id, "offline")
+                # Trigger update status refresh immediately on recovery so the
+                # dashboard shows up-to-date pending updates without waiting for
+                # the next full health check cycle.
+                try:
+                    from app.services.update_service import UpdateService
+                    logger.info(f"Firewall recovered online, refreshing updates for {firewall.hostname or firewall.ip}")
+                    await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+                except Exception as upd_err:
+                    logger.warning(f"Post-recovery update check failed for {firewall.hostname or firewall.ip}: {upd_err}")
 
         return now_online
 
@@ -426,6 +435,13 @@ class MonitoringService:
             status.online = False
             status.last_error = str(e)
             firewall.last_sync_error = str(e)
+            # Preserve last known metrics so the dashboard doesn't lose
+            # updates/firmware info while a firewall is temporarily offline.
+            if previous_status is not None:
+                if status.updates_available is None:
+                    status.updates_available = previous_status.updates_available
+                if status.firmware_version is None:
+                    status.firmware_version = previous_status.firmware_version
 
         db.add(status)
         db.commit()
