@@ -218,7 +218,22 @@ async def auto_update_firewalls():
 
         for fw in scheduled_updates:
             try:
-                logger.info(f"Starting auto-update for {fw.hostname}")
+                # Always refresh pending updates first to avoid stale
+                # firmware/status responses in maintenance windows.
+                update_state = await UpdateService.refresh_firewall_update_status(
+                    db,
+                    fw,
+                    trigger_check=True,
+                )
+                pending = int(update_state.get("updates_available") or 0)
+                if pending <= 0:
+                    logger.info(
+                        f"Skipping auto-update for {fw.hostname}: no pending updates "
+                        f"(status_msg={update_state.get('status_msg')})"
+                    )
+                    continue
+
+                logger.info(f"Starting auto-update for {fw.hostname} with {pending} pending update(s)")
                 await UpdateService.install_updates(db, fw, "auto")
             except Exception as e:
                 logger.error(f"Auto-update failed for {fw.hostname}: {e}")
