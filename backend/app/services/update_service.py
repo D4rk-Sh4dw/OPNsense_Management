@@ -3,7 +3,7 @@ import asyncio
 import re
 from datetime import datetime
 from sqlalchemy.orm import Session
-from app.models import Firewall, UpdateHistory, Alert, Backup
+from app.models import Firewall, FirewallStatus, UpdateHistory, Alert, Backup
 from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
 from app.services.email_service import EmailService
@@ -526,40 +526,100 @@ class UpdateService:
 
         for fw in firewalls:
             try:
-                # Decrypt API secret
-                api_secret = EncryptionService.decrypt(fw.api_secret)
-
-                # Initialize API client
-                api_client = OPNsenseAPI(
-                    fw.ip,
-                    fw.api_key,
-                    api_secret,
-                    fw.verify_ssl,
-                    fw.ssl_cert_path
-                )
-
-                # Check for updates
-                status = await api_client.get_firmware_status()
-                try:
-                    firmware_info = await api_client.get_firmware_info()
-                    status = merge_firmware_info_into_status(status, firmware_info)
-                except Exception:
-                    pass
-                updates_count = extract_firmware_update_count(status)
-                if updates_count > 0:
+                result = await UpdateService.refresh_firewall_update_status(db, fw)
+                if result["updates_available"] > 0:
                     updates_available.append({
                         "firewall_id": fw.id,
                         "hostname": fw.hostname,
                         "customer": fw.customer_name,
-                        "current_version": extract_firmware_version(status),
-                        "latest_version": extract_latest_firmware_version(status),
-                        "updates_count": updates_count,
+                        "current_version": result["current_version"],
+                        "latest_version": result["latest_version"],
+                        "updates_count": result["updates_available"],
                     })
-
             except Exception as e:
                 logger.error(f"Failed to check updates for {fw.hostname}: {e}")
 
         return {"available_updates": updates_available}
+
+    @staticmethod
+    async def refresh_firewall_update_status(db: Session, firewall: Firewall, trigger_check: bool = True) -> dict:
+        """Refresh pending update information for a single firewall and persist it.
+
+        Args:
+            db: Database session
+            firewall: Firewall instance
+            trigger_check: Whether to call firmware/check before reading status
+        """
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api_client = OPNsenseAPI(
+            firewall.ip,
+            firewall.api_key,
+            api_secret,
+            firewall.verify_ssl,
+            firewall.ssl_cert_path,
+        )
+
+        if trigger_check:
+            try:
+                await api_client.check_firmware_updates()
+            except Exception:
+                # Some OPNsense versions don't reliably return JSON here.
+                pass
+
+        status = await api_client.get_firmware_status()
+
+        if trigger_check:
+            refreshed = None
+            for _ in range(5):
+                await asyncio.sleep(2)
+                try:
+                    candidate = await api_client.get_firmware_status()
+                except Exception:
+                    continue
+                if not isinstance(candidate, dict):
+                    continue
+                candidate_version = extract_firmware_version(candidate)
+                if candidate_version or extract_firmware_update_count(candidate) > 0:
+                    refreshed = candidate
+                    break
+            if isinstance(refreshed, dict):
+                status = refreshed
+
+        try:
+            firmware_info = await api_client.get_firmware_info()
+            status = merge_firmware_info_into_status(status, firmware_info)
+        except Exception:
+            pass
+
+        updates_count = extract_firmware_update_count(status)
+        current_version = extract_firmware_version(status)
+        latest_version = extract_latest_firmware_version(status)
+        needs_reboot = extract_needs_reboot(status)
+
+        latest = (
+            db.query(FirewallStatus)
+            .filter(FirewallStatus.firewall_id == firewall.id)
+            .order_by(FirewallStatus.checked_at.desc())
+            .first()
+        )
+        if latest is None:
+            latest = FirewallStatus(firewall_id=firewall.id)
+            db.add(latest)
+        latest.updates_available = updates_count
+        if current_version:
+            latest.firmware_version = current_version
+        latest.checked_at = datetime.utcnow()
+        db.commit()
+
+        return {
+            "firewall_id": str(firewall.id),
+            "updates_available": updates_count,
+            "current_version": current_version,
+            "latest_version": latest_version,
+            "download_size": status.get("download_size") if isinstance(status, dict) else None,
+            "needs_reboot": needs_reboot,
+            "status_msg": status.get("status_msg") if isinstance(status, dict) else None,
+        }
 
     @staticmethod
     def get_scheduled_updates_for_window(db: Session) -> list:

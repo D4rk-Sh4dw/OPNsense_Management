@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     LICENSE_CHECK_HOUR: int = 2  # 2 AM daily
     MONITORING_INTERVAL_MINUTES: int = 5
     SMART_CHECK_HOUR: int = 3  # 3 AM daily
+    UPDATE_CHECK_INTERVAL_MINUTES: int = 30
 
     # License alerting (CSV of day thresholds, global default if firewall has no override)
     LICENSE_ALERT_DAYS: str = "30,14,7,1"

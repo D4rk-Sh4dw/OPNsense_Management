@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 SCHEDULER_REFRESH_MINUTES = 1
 BACKUP_SCAN_INTERVAL_MINUTES = 15
+UPDATE_CHECK_INTERVAL_MINUTES = max(5, int(settings.UPDATE_CHECK_INTERVAL_MINUTES or 30))
 
 
 def _new_session() -> Session:
@@ -226,6 +227,21 @@ async def auto_update_firewalls():
         db.close()
 
 
+async def check_pending_updates_all_firewalls():
+    """Refresh pending update status for all firewalls on a fixed interval."""
+    logger.info("Refreshing pending update status...")
+    db = _new_session()
+
+    try:
+        result = await UpdateService.check_pending_updates(db)
+        count = len(result.get("available_updates", []))
+        logger.info(f"Pending update refresh completed: {count} firewall(s) with updates")
+    except Exception as e:
+        logger.error(f"Pending update refresh failed: {e}")
+    finally:
+        db.close()
+
+
 async def smart_check_all_firewalls():
     """Daily S.M.A.R.T. disk health check across all firewalls."""
     logger.info("Starting S.M.A.R.T. check...")
@@ -363,6 +379,15 @@ def start_scheduler():
         args=[auto_update_firewalls],
         id='auto_updates',
         name='Apply automatic updates'
+    )
+
+    scheduler.add_job(
+        sync_job,
+        'interval',
+        minutes=UPDATE_CHECK_INTERVAL_MINUTES,
+        args=[check_pending_updates_all_firewalls],
+        id='check_pending_updates',
+        name='Refresh pending updates for all firewalls'
     )
 
     scheduler.add_job(

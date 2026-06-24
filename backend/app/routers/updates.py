@@ -1,22 +1,11 @@
 import logging
-import asyncio
 from typing import List
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
-from app.models import Firewall, Alert, UpdateHistory, FirewallStatus
+from app.models import Firewall, Alert, UpdateHistory
 from app.schemas import UpdateHistoryResponse
 from app.services.update_service import UpdateService
-from app.services.opnsense_api import (
-    OPNsenseAPI,
-    extract_firmware_version,
-    extract_latest_firmware_version,
-    extract_firmware_update_count,
-    extract_needs_reboot,
-    merge_firmware_info_into_status,
-)
-from app.services.encryption_service import EncryptionService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/updates", tags=["updates"])
@@ -48,73 +37,8 @@ async def check_updates(
         raise HTTPException(status_code=404, detail="Firewall not found")
 
     try:
-        api_secret = EncryptionService.decrypt(firewall.api_secret)
-        api = OPNsenseAPI(
-            firewall.ip, firewall.api_key, api_secret,
-            firewall.verify_ssl, firewall.ssl_cert_path
-        )
-        # Trigger fresh check then fetch status — identical to the scheduler path
-        # in MonitoringService.check_firewall_health for consistent results.
-        try:
-            await api.check_firmware_updates()
-        except Exception:
-            pass  # check endpoint may not always return JSON
-
-        # firmware/check is async on OPNsense. Poll briefly so we don't read a
-        # transitional empty status immediately after triggering the check.
-        status = await api.get_firmware_status()
-        refreshed = None
-        for _ in range(10):
-            await asyncio.sleep(2)
-            try:
-                candidate = await api.get_firmware_status()
-            except Exception:
-                continue
-            if not isinstance(candidate, dict):
-                continue
-            candidate_version = extract_firmware_version(candidate)
-            if candidate_version or extract_firmware_update_count(candidate) > 0:
-                refreshed = candidate
-                break
-        if isinstance(refreshed, dict):
-            status = refreshed
-
-        # Merge product.product_check from firmware/info (major upgrade signals).
-        try:
-            info = await api.get_firmware_info()
-            status = merge_firmware_info_into_status(status, info)
-        except Exception:
-            pass
-
-        updates_count = extract_firmware_update_count(status)
-        current_version = extract_firmware_version(status)
-
-        # Persist into FirewallStatus so the dashboard reflects the freshly
-        # detected count immediately (without waiting for the next scheduler tick).
-        latest = (
-            db.query(FirewallStatus)
-            .filter(FirewallStatus.firewall_id == firewall.id)
-            .order_by(FirewallStatus.checked_at.desc())
-            .first()
-        )
-        if latest is None:
-            latest = FirewallStatus(firewall_id=firewall.id)
-            db.add(latest)
-        latest.updates_available = updates_count
-        if current_version:
-            latest.firmware_version = current_version
-        latest.checked_at = datetime.utcnow()
-        db.commit()
-
-        return {
-            "firewall_id": firewall_id,
-            "updates_available": updates_count,
-            "current_version": current_version,
-            "latest_version": extract_latest_firmware_version(status),
-            "download_size": status.get("download_size"),
-            "needs_reboot": extract_needs_reboot(status),
-            "status_msg": status.get("status_msg"),
-        }
+        result = await UpdateService.refresh_firewall_update_status(db, firewall, trigger_check=True)
+        return result
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not reach firewall: {e}")
 
