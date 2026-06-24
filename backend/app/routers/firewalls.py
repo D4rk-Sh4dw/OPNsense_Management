@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 import httpx
@@ -26,10 +25,6 @@ from app.services.update_service import UpdateService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/firewalls", tags=["firewalls"])
-
-# In-memory streaks for transient live polling failures (per process).
-_LIVE_FAILURE_STREAKS: Dict[str, int] = {}
-_LIVE_FAILURE_THRESHOLD = 3
 
 
 class SubscriptionKeyUpdateRequest(BaseModel):
@@ -451,8 +446,6 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
                     # Mark online only if a dedicated connectivity endpoint succeeds.
                     await api.get_system_information()
 
-                    _LIVE_FAILURE_STREAKS[str(fw.id)] = 0
-
                     resources, activity = await asyncio.gather(
                         api.get_system_resources(),
                         api.get_activity(),
@@ -468,10 +461,7 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
                     await asyncio.sleep(1)
 
             logger.debug(f"Live dashboard poll failed for {fw.hostname or fw.ip}: {last_error}")
-            fw_key = str(fw.id)
-            streak = _LIVE_FAILURE_STREAKS.get(fw_key, 0) + 1
-            _LIVE_FAILURE_STREAKS[fw_key] = streak
-            return {"online": None, "cpu": None, "ram": None, "failure_streak": streak}
+            return {"online": False, "cpu": None, "ram": None}
 
         return str(fw.id), await LIVE_CACHE.get_or_fetch(str(fw.id), lambda: bounded(_fetch))
 
@@ -491,15 +481,6 @@ async def get_dashboard_firewalls_live(db: Session = Depends(get_db)):
             item["ram_usage"] = data["ram"]
         if data["online"] is not None:
             item["online"] = data["online"]
-        elif item.get("online") is True and (data.get("failure_streak", 0) >= _LIVE_FAILURE_THRESHOLD):
-            # Mark offline after consecutive failures to avoid false online while
-            # still tolerating short transient network hiccups.
-            item["online"] = False
-        elif item.get("online") is None and (data.get("failure_streak", 0) >= _LIVE_FAILURE_THRESHOLD):
-            item["online"] = False
-        elif item.get("online") is True:
-            # Keep previous state for short transient polling failures.
-            pass
     return base
 
 
