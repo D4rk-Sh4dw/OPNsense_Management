@@ -411,15 +411,15 @@ class OPNsenseAPI:
 
     async def check_firmware_updates(self) -> Dict[str, Any]:
         """POST /api/core/firmware/check"""
-        return await self._request("POST", "/core/firmware/check")
+        return await self._request("POST", "/core/firmware/check", json={})
 
     async def install_updates(self) -> Dict[str, Any]:
         """POST /api/core/firmware/update"""
-        return await self._request("POST", "/core/firmware/update")
+        return await self._request("POST", "/core/firmware/update", json={})
 
     async def upgrade_firmware(self) -> Dict[str, Any]:
         """POST /api/core/firmware/upgrade (major release upgrade path)."""
-        return await self._request("POST", "/core/firmware/upgrade")
+        return await self._request("POST", "/core/firmware/upgrade", json={})
 
     async def get_upgrade_status(self) -> Dict[str, Any]:
         """GET /api/core/firmware/upgradestatus"""
@@ -427,7 +427,7 @@ class OPNsenseAPI:
 
     async def reboot_system(self) -> Dict[str, Any]:
         """POST /api/core/firmware/reboot"""
-        return await self._request("POST", "/core/firmware/reboot")
+        return await self._request("POST", "/core/firmware/reboot", json={})
 
     # ===== Backup endpoints =====
     async def list_remote_backups(self, host: str = "this") -> Any:
@@ -444,11 +444,11 @@ class OPNsenseAPI:
 
     async def delete_remote_backup(self, filename: str) -> Dict[str, Any]:
         """POST /api/core/backup/delete_backup/{filename}"""
-        return await self._request("POST", f"/core/backup/delete_backup/{filename}")
+        return await self._request("POST", f"/core/backup/delete_backup/{filename}", json={})
 
     async def revert_backup(self, filename: str) -> Dict[str, Any]:
         """POST /api/core/backup/revert_backup/{filename} - restore a remote backup"""
-        return await self._request("POST", f"/core/backup/revert_backup/{filename}")
+        return await self._request("POST", f"/core/backup/revert_backup/{filename}", json={})
 
     # ===== Diagnostics: System =====
     async def get_system_information(self) -> Dict[str, Any]:

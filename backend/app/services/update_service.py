@@ -100,7 +100,7 @@ class UpdateService:
             try:
                 update_response = await api_client.install_updates()
                 triggered.append("update")
-                logger.info(f"firmware/update sent ({update_response})")
+                logger.info(f"firmware/update response on {firewall.hostname}: {update_response}")
             except Exception as e:
                 logger.warning(f"firmware/update failed on {firewall.hostname}: {e}")
                 update_response = f"error: {e}"
@@ -108,7 +108,7 @@ class UpdateService:
             try:
                 upgrade_response = await api_client.upgrade_firmware()
                 triggered.append("upgrade")
-                logger.info(f"firmware/upgrade sent ({upgrade_response})")
+                logger.info(f"firmware/upgrade response on {firewall.hostname}: {upgrade_response}")
             except Exception as e:
                 logger.warning(f"firmware/upgrade failed on {firewall.hostname}: {e}")
                 upgrade_response = f"error: {e}"
@@ -124,8 +124,26 @@ class UpdateService:
                 f"pre_status={pre_status_value or 'none'}"
             )
 
-            # Brief wait so OPNsense can mark the job as running before we poll.
-            await asyncio.sleep(3)
+            # OPNsense needs a moment to register the job.
+            await asyncio.sleep(5)
+
+            # Verify the job actually started by checking upgradestatus.
+            try:
+                verify_st = await api_client.get_upgrade_status()
+                verify_status = str(verify_st.get("status", "")).lower()
+            except Exception as e:
+                verify_status = f"error: {e}"
+
+            update_record.log += f"; verify_status_after_trigger={verify_status}"
+
+            # If status is still "none"/"done" (and was already "done" before),
+            # the trigger likely did not start a new job.
+            if verify_status in ("none", "", "done") and pre_status_value == "done":
+                logger.warning(
+                    f"Trigger did not start a new job on {firewall.hostname} "
+                    f"(verify_status={verify_status}, pre_status={pre_status_value})"
+                )
+                # We continue polling anyway, but log the suspicion.
 
             # Poll for completion. We require the status to transition through
             # "running" to "done"; a stale "done" from a previous run is ignored
