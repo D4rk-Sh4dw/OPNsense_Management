@@ -263,6 +263,63 @@ class MonitoringService:
     """Service for firewall health monitoring"""
 
     @staticmethod
+    async def check_firewall_connectivity(db: Session, firewall: Firewall) -> bool:
+        """Fast online/offline check. Updates `online` in the latest status row in-place.
+        Only raises/resolves the offline alert on state transition."""
+        prev = (
+            db.query(FirewallStatus)
+            .filter(FirewallStatus.firewall_id == firewall.id)
+            .order_by(FirewallStatus.checked_at.desc())
+            .first()
+        )
+        prev_online = prev.online if prev else None
+
+        try:
+            api_secret = EncryptionService.decrypt(firewall.api_secret)
+            api = OPNsenseAPI(
+                firewall.ip, firewall.api_key, api_secret,
+                firewall.verify_ssl, firewall.ssl_cert_path,
+            )
+            api.timeout = 5
+            await api.get_system_information()
+            now_online = True
+            firewall.last_seen = datetime.utcnow()
+            firewall.last_sync_error = None
+        except Exception as e:
+            now_online = False
+            firewall.last_sync_error = str(e)
+
+        if prev is None:
+            row = FirewallStatus(
+                firewall_id=firewall.id,
+                online=now_online,
+                checked_at=datetime.utcnow(),
+            )
+            db.add(row)
+        else:
+            prev.online = now_online
+            prev.checked_at = datetime.utcnow()
+            if not now_online:
+                prev.last_error = firewall.last_sync_error
+
+        db.commit()
+
+        # Alert only on state transition
+        if now_online != prev_online:
+            if not now_online:
+                raise_alert(
+                    db, firewall,
+                    alert_type="offline",
+                    severity="critical",
+                    title="Firewall offline",
+                    message=f"Firewall {firewall.hostname or firewall.ip} is not reachable: {firewall.last_sync_error or 'unknown error'}",
+                )
+            else:
+                resolve_alert_if_open(db, firewall.id, "offline")
+
+        return now_online
+
+    @staticmethod
     async def check_firewall_health(
         db: Session,
         firewall: Firewall

@@ -52,6 +52,7 @@ def _load_scheduler_values(db: Session) -> dict:
 
     return {
         "monitoring_interval_seconds": monitoring_interval_seconds,
+        "monitoring_interval_minutes": max(1, int(row.monitoring_interval_minutes or settings.MONITORING_INTERVAL_MINUTES)),
         "license_check_hour": max(0, min(23, int(row.license_check_hour if row.license_check_hour is not None else settings.LICENSE_CHECK_HOUR))),
         "smart_check_hour": max(0, min(23, int(row.smart_check_hour if row.smart_check_hour is not None else settings.SMART_CHECK_HOUR))),
     }
@@ -113,9 +114,25 @@ def _is_backup_due(fw: Firewall, last_auto: Backup | None, now: datetime) -> boo
     return False
 
 
+async def check_connectivity_all_firewalls():
+    """Fast online/offline connectivity check for all firewalls (runs every few seconds)."""
+    logger.debug("Fast connectivity check...")
+    db = _new_session()
+    try:
+        firewalls = db.query(Firewall).all()
+        for fw in firewalls:
+            try:
+                online = await MonitoringService.check_firewall_connectivity(db, fw)
+                logger.debug(f"Connectivity: {fw.hostname or fw.ip} -> {'online' if online else 'OFFLINE'}")
+            except Exception as e:
+                logger.error(f"Connectivity check failed for {fw.hostname}: {e}")
+    finally:
+        db.close()
+
+
 async def monitor_all_firewalls():
-    """Check health of all firewalls"""
-    logger.info("Starting health monitoring...")
+    """Full health check (firmware/CPU/RAM/gateways/services) for all firewalls."""
+    logger.info("Starting full health monitoring...")
     db = _new_session()
 
     try:
@@ -124,7 +141,7 @@ async def monitor_all_firewalls():
         for fw in firewalls:
             try:
                 await MonitoringService.check_firewall_health(db, fw)
-                logger.info(f"Health check completed: {fw.hostname}")
+                logger.info(f"Full health check completed: {fw.hostname}")
             except Exception as e:
                 logger.error(f"Health check failed for {fw.hostname}: {e}")
 
@@ -339,9 +356,14 @@ def refresh_scheduler_jobs(scheduler: BlockingScheduler):
 
     try:
         scheduler.reschedule_job(
-            "monitor_firewalls",
+            "check_connectivity",
             trigger="interval",
             seconds=cfg["monitoring_interval_seconds"],
+        )
+        scheduler.reschedule_job(
+            "monitor_firewalls",
+            trigger="interval",
+            minutes=cfg["monitoring_interval_minutes"],
         )
         scheduler.reschedule_job(
             "check_licenses",
@@ -372,13 +394,24 @@ def start_scheduler():
     scheduler = BlockingScheduler()
 
     # Add jobs
+    # Fast online/offline connectivity check (every N seconds)
     scheduler.add_job(
         sync_job,
         'interval',
         seconds=cfg["monitoring_interval_seconds"],
+        args=[check_connectivity_all_firewalls],
+        id='check_connectivity',
+        name='Fast connectivity check'
+    )
+
+    # Full health check: firmware/CPU/RAM/gateways/services (every N minutes)
+    scheduler.add_job(
+        sync_job,
+        'interval',
+        minutes=cfg["monitoring_interval_minutes"],
         args=[monitor_all_firewalls],
         id='monitor_firewalls',
-        name='Monitor all firewalls'
+        name='Full health monitoring'
     )
 
     scheduler.add_job(
