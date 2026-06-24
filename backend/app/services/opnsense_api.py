@@ -293,12 +293,44 @@ class OPNsenseAPI:
 
     # ===== S.M.A.R.T. endpoints (requires os-smart plugin) =====
     async def smart_list(self) -> Dict[str, Any]:
-        """POST /api/smart/service/list - list SMART-capable devices"""
-        return await self._request("POST", "/smart/service/list", json={})
+        """List SMART-capable devices with endpoint/method fallbacks."""
+        last_error = None
+        candidates = [
+            ("POST", "/smart/service/list", {}),
+            ("GET", "/smart/service/list", None),
+            ("POST", "/smart/service/search", {}),
+            ("GET", "/smart/service/search", None),
+        ]
+        for method, endpoint, payload in candidates:
+            try:
+                kwargs = {"json": payload} if payload is not None and method == "POST" else {}
+                return await self._request(method, endpoint, **kwargs)
+            except Exception as e:
+                last_error = e
+                continue
+        if last_error:
+            raise last_error
+        return {}
 
     async def smart_info(self, device: str, dev_type: str = "auto") -> Dict[str, Any]:
-        """POST /api/smart/service/info - detailed SMART info for one device"""
-        return await self._request("POST", "/smart/service/info", json={"device": device, "type": dev_type})
+        """Get SMART details for one device with endpoint/payload fallbacks."""
+        last_error = None
+        payloads = [
+            {"device": device, "type": dev_type},
+            {"dev": device, "type": dev_type},
+            {"disk": device, "type": dev_type},
+            {"device": device},
+        ]
+        for payload in payloads:
+            for method, endpoint in [("POST", "/smart/service/info"), ("POST", "/smart/service/details")]:
+                try:
+                    return await self._request(method, endpoint, json=payload)
+                except Exception as e:
+                    last_error = e
+                    continue
+        if last_error:
+            raise last_error
+        return {}
 
     # ===== Restore (legacy) =====
     async def restore_backup(self, crypto: str, payload: str) -> Dict[str, Any]:

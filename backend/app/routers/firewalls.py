@@ -381,11 +381,21 @@ async def get_firewall_smart(
                     })
         return {"available": True, "devices": devices}
     except Exception as e:
-        # Plugin may not be installed: degrade gracefully
+        # Degrade gracefully but expose real reason to UI.
         msg = str(e)
-        if "404" in msg or "not found" in msg.lower():
-            return {"available": False, "reason": "os-smart plugin not installed", "devices": []}
-        raise HTTPException(status_code=502, detail=f"SMART query failed: {e}")
+        lowered = msg.lower()
+        plugin_missing = (
+            "not found" in lowered
+            or "404" in lowered
+            or "plugin" in lowered
+            or "smart/service" in lowered and "no route" in lowered
+        )
+        if plugin_missing:
+            reason = "os-smart plugin not installed or API path unavailable"
+        else:
+            reason = f"SMART query failed: {msg}"
+        logger.warning(f"SMART unavailable for {firewall.hostname}: {reason}")
+        return {"available": False, "reason": reason, "devices": []}
 
 
 @router.get("/{firewall_id}/live-stats")

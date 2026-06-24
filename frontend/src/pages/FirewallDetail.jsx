@@ -111,7 +111,8 @@ export default function FirewallDetail() {
       const res = await firewallsAPI.getSmart(id)
       setSmart(res.data)
     } catch (e) {
-      setSmart({ available: false, reason: 'unavailable', devices: [] })
+      const reason = e?.response?.data?.detail || e?.message || 'unavailable'
+      setSmart({ available: false, reason, devices: [] })
     } finally {
       setLoadingSmart(false)
     }
@@ -486,7 +487,10 @@ export default function FirewallDetail() {
           <p className="text-gray-500 dark:text-gray-400 text-sm">Loading SMART data...</p>
         ) : !smart?.available ? (
           <p className="text-gray-500 dark:text-gray-400 text-sm">
-            SMART unavailable {smart?.reason ? `(${smart.reason})` : ''}. Install the <span className="font-mono">os-smart</span> plugin on the firewall.
+            SMART unavailable {smart?.reason ? `(${smart.reason})` : ''}.
+            {String(smart?.reason || '').toLowerCase().includes('plugin')
+              ? <> Install the <span className="font-mono">os-smart</span> plugin on the firewall.</>
+              : <> Check API permissions and endpoint compatibility on this OPNsense version.</>}
           </p>
         ) : smart.devices.length === 0 ? (
           <p className="text-gray-500 dark:text-gray-400 text-sm">No SMART-capable devices detected.</p>
