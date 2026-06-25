@@ -522,7 +522,10 @@ export default function Dashboard() {
                             <StatusBadge status={l.status} />
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-700 dark:text-gray-300 font-mono">
-                            {l.version_before || '—'} → {l.version_after || '—'}
+                            {l.version_before && l.version_after && l.version_before !== l.version_after
+                              ? <>{l.version_before} → {l.version_after}</>
+                              : l.version_before || l.version_after || '—'
+                            }
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{formatDate(l.started_at)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{formatDate(l.completed_at)}</td>

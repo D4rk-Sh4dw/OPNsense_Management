@@ -242,7 +242,7 @@ class UpdateService:
                 # No-op: don't fail the job when there is simply nothing to do.
                 update_record.status = "success"
                 update_record.version_before = update_record.version_before or extract_firmware_version(status_before)
-                update_record.version_after = update_record.version_before
+                update_record.version_after = None  # no version change – avoid misleading "x → x" display
                 update_record.completed_at = datetime.utcnow()
                 update_record.log = (
                     f"action=none; reason=no_pending_updates; "
