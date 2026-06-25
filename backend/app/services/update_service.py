@@ -260,8 +260,20 @@ class UpdateService:
                 return re.sub(r"_\d+$", "", str(v).strip())
 
             # Ensure product_latest is available before completion criteria are computed.
+            # For major upgrades, upgrade_target / upgrade_major_version is the real
+            # target version (e.g. "25.10"), while product_latest only reflects the
+            # current minor-release channel (e.g. "25.4.3") and may equal the already
+            # installed version — causing a false "reached_expected_target" immediately
+            # after triggering the upgrade.
+            upgrade_target_raw = ""
+            if isinstance(status_before, dict):
+                upgrade_target_raw = (
+                    status_before.get("upgrade_target")
+                    or status_before.get("upgrade_major_version")
+                    or ""
+                )
             product_latest = extract_latest_firmware_version(status_before) or ""
-            expected_target_version = _norm_version(product_latest) if product_latest else ""
+            expected_target_version = _norm_version(upgrade_target_raw or product_latest)
             version_before_norm = _norm_version(update_record.version_before)
             target_requires_version_change = bool(
                 expected_target_version and version_before_norm and expected_target_version != version_before_norm
