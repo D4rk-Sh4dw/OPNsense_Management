@@ -34,8 +34,6 @@ class Settings(BaseSettings):
     VERIFY_SSL: bool = False
     POLLING_INTERVAL_SECONDS: int = 300  # 5 minutes
     REQUEST_TIMEOUT_SECONDS: int = 30
-    PING_TIMEOUT_SECONDS: int = 2
-    PING_RETRIES: int = 2
 
     # Backup
     BACKUP_RETENTION_COUNT: int = 30

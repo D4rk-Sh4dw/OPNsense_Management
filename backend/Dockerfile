@@ -6,7 +6,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
-    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements

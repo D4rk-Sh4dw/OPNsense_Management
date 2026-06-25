@@ -1,6 +1,4 @@
 import logging
-import asyncio
-import platform
 import re
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -23,48 +21,11 @@ settings = get_settings()
 # transient WAN/read timeout spikes.
 _CONNECTIVITY_FAILURES: dict[str, int] = {}
 _CONNECTIVITY_FAIL_THRESHOLD = 3
-_CONNECTIVITY_RETRIES = max(1, int(settings.PING_RETRIES or 2))
-_PING_TIMEOUT_SECONDS = max(1, int(settings.PING_TIMEOUT_SECONDS or 2))
+_CONNECTIVITY_RETRIES = 2
 _RECOVERY_UPDATE_CHECK_LAST_RUN: dict[str, datetime] = {}
 _RECOVERY_ONLINE_SINCE: dict[str, datetime] = {}
 _RECOVERY_CHECK_DONE_FOR_STREAK: dict[str, bool] = {}
 _RECOVERY_STABLE_ONLINE_DELAY = timedelta(minutes=5)
-
-
-async def _ping_host(host: str, timeout_seconds: int) -> tuple[bool, str | None]:
-    """Run one ICMP echo request against host.
-
-    Returns (ok, error_message). If ping utility is missing, the caller can
-    choose a fallback probe strategy.
-    """
-    if not host:
-        return False, "no host configured"
-
-    is_windows = platform.system().lower().startswith("win")
-    if is_windows:
-        # Windows ping timeout is in milliseconds.
-        cmd = ["ping", "-n", "1", "-w", str(timeout_seconds * 1000), host]
-    else:
-        # Linux ping timeout is in seconds.
-        cmd = ["ping", "-c", "1", "-W", str(timeout_seconds), host]
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except FileNotFoundError:
-        return False, "ping command not found"
-    except Exception as e:
-        return False, f"ping execution failed: {e}"
-
-    stdout, stderr = await proc.communicate()
-    if proc.returncode == 0:
-        return True, None
-
-    output = (stderr or stdout or b"").decode(errors="ignore").strip()
-    return False, output or f"ping failed with code {proc.returncode}"
 
 
 def _recovery_update_check_due(firewall_id) -> bool:
@@ -427,31 +388,21 @@ class MonitoringService:
         )
         prev_online = prev.online if prev else None
 
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        # Slightly longer timeout than before to reduce false negatives.
+        api.timeout = 8
+
         last_error = None
         probe_ok = False
-        target = firewall.hostname or firewall.ip
         for _ in range(_CONNECTIVITY_RETRIES):
-            ok, err = await _ping_host(target, _PING_TIMEOUT_SECONDS)
-            if ok:
-                probe_ok = True
-                break
-            last_error = err
-
-        # Fallback for minimal environments where ping utility is unavailable.
-        if not probe_ok and str(last_error or "").lower() == "ping command not found":
             try:
-                api_secret = EncryptionService.decrypt(firewall.api_secret)
-                api = OPNsenseAPI(
-                    firewall.ip,
-                    firewall.api_key,
-                    api_secret,
-                    firewall.verify_ssl,
-                    firewall.ssl_cert_path,
-                )
-                api.timeout = 8
                 await api.get_system_information()
                 probe_ok = True
-                last_error = None
+                break
             except Exception as e:
                 last_error = e
 
@@ -468,7 +419,7 @@ class MonitoringService:
             # Keep a previously-online firewall online until threshold is reached.
             should_mark_offline = prev_online is not True or consecutive_failures >= _CONNECTIVITY_FAIL_THRESHOLD
             now_online = not should_mark_offline
-            firewall.last_sync_error = str(last_error) if last_error else "ping connectivity check failed"
+            firewall.last_sync_error = str(last_error) if last_error else "connectivity check failed"
 
         if prev is None:
             row = FirewallStatus(
