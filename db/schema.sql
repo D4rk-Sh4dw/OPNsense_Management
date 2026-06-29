@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS firewalls (
 CREATE INDEX IF NOT EXISTS idx_firewalls_ip ON firewalls(ip);
 CREATE INDEX IF NOT EXISTS idx_firewalls_customer ON firewalls(customer_name);
 
+-- Firewall tag catalog table
+CREATE TABLE IF NOT EXISTS firewall_tags (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_firewall_tags_name ON firewall_tags(name);
+
 -- Firewall status table
 CREATE TABLE IF NOT EXISTS firewall_status (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

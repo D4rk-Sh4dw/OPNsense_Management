@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Firewall, FirewallStatus, Alert
+from app.models import Firewall, FirewallStatus, Alert, FirewallTag
 from app.schemas import (
     FirewallCreate,
     FirewallUpdate,
@@ -17,6 +17,8 @@ from app.schemas import (
     AlertResponse,
     DashboardSummary,
     FirewallQuickStatus,
+    FirewallTagCreate,
+    FirewallTagResponse,
 )
 from app.services.encryption_service import EncryptionService
 from app.services.monitoring_service import MonitoringService
@@ -103,6 +105,39 @@ async def _refresh_license_from_firewall(db: Session, firewall: Firewall) -> Dic
         "expiry_detected": expiry is not None,
         "expiry_sources": sources_tried,
     }
+
+
+def _normalize_tags(raw_tags: Optional[List[str]]) -> List[str]:
+    """Normalize tag list by trimming and de-duplicating case-insensitively."""
+    if not raw_tags:
+        return []
+
+    normalized: List[str] = []
+    seen = set()
+    for raw in raw_tags:
+        if raw is None:
+            continue
+        tag = str(raw).strip()
+        if not tag:
+            continue
+        key = tag.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(tag)
+    return normalized
+
+
+def _ensure_tag_catalog(db: Session, tags: List[str]) -> None:
+    """Ensure each used tag exists in the central tag catalog."""
+    if not tags:
+        return
+
+    existing = {t.name.lower() for t in db.query(FirewallTag).all()}
+    for tag in tags:
+        if tag.lower() not in existing:
+            db.add(FirewallTag(name=tag))
+            existing.add(tag.lower())
 
 
 @router.get("/map")
@@ -207,6 +242,49 @@ async def list_firewalls(
     return firewalls
 
 
+@router.get("/tags", response_model=List[FirewallTagResponse])
+async def list_firewall_tags(db: Session = Depends(get_db)):
+    """List centrally managed firewall tags."""
+    return db.query(FirewallTag).order_by(FirewallTag.name.asc()).all()
+
+
+@router.post("/tags", response_model=FirewallTagResponse, status_code=status.HTTP_201_CREATED)
+async def create_firewall_tag(payload: FirewallTagCreate, db: Session = Depends(get_db)):
+    """Create a reusable tag for firewall assignment."""
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Tag name must not be empty")
+
+    existing_names = {t.name.lower() for t in db.query(FirewallTag).all()}
+    if name.lower() in existing_names:
+        raise HTTPException(status_code=409, detail="Tag already exists")
+
+    tag = FirewallTag(name=name)
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return tag
+
+
+@router.delete("/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_firewall_tag(tag_id: str, db: Session = Depends(get_db)):
+    """Delete a tag and remove it from all firewalls using it."""
+    tag = db.query(FirewallTag).filter(FirewallTag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    tag_name = tag.name
+    firewalls_with_tag = db.query(Firewall).all()
+    for firewall in firewalls_with_tag:
+        tags = firewall.tags if isinstance(firewall.tags, list) else []
+        updated = [t for t in tags if str(t).lower() != tag_name.lower()]
+        if updated != tags:
+            firewall.tags = updated
+
+    db.delete(tag)
+    db.commit()
+
+
 @router.post("", response_model=FirewallResponse, status_code=status.HTTP_201_CREATED)
 async def create_firewall(
     firewall_data: FirewallCreate,
@@ -216,6 +294,8 @@ async def create_firewall(
 
     # Encrypt API secret
     encrypted_secret = EncryptionService.encrypt(firewall_data.api_secret)
+
+    normalized_tags = _normalize_tags(firewall_data.tags)
 
     firewall = Firewall(
         customer_name=firewall_data.customer_name,
@@ -238,7 +318,7 @@ async def create_firewall(
         backup_weekday=firewall_data.backup_weekday,
         backup_monthday=firewall_data.backup_monthday,
         backup_retention=firewall_data.backup_retention,
-        tags=firewall_data.tags,
+        tags=normalized_tags,
         notes=firewall_data.notes,
         location_address=firewall_data.location_address,
     )
@@ -254,6 +334,7 @@ async def create_firewall(
             logger.warning(f"Initial geocoding failed for {firewall_data.ip}: {e}")
 
     db.add(firewall)
+    _ensure_tag_catalog(db, normalized_tags)
     db.commit()
     db.refresh(firewall)
 
@@ -329,6 +410,10 @@ async def update_firewall(
         # Note: current implementation doesn't support updating api_secret through normal updates
         # This would need a separate secure endpoint
         pass
+
+    if "tags" in update_data:
+        update_data["tags"] = _normalize_tags(update_data["tags"])
+        _ensure_tag_catalog(db, update_data["tags"])
 
     for field, value in update_data.items():
         setattr(firewall, field, value)

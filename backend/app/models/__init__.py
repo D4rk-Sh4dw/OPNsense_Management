@@ -54,6 +54,15 @@ class Firewall(Base):
     last_sync_error = Column(Text, nullable=True)
 
 
+class FirewallTag(Base):
+    """Managed tag catalog used for firewall categorization."""
+    __tablename__ = "firewall_tags"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class FirewallStatus(Base):
     """Latest monitoring data for each firewall"""
     __tablename__ = "firewall_status"

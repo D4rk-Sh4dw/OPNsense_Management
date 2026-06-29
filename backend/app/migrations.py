@@ -6,7 +6,7 @@ uses IF NOT EXISTS / IF EXISTS guards.
 import logging
 from sqlalchemy import text
 from app.database import engine, SessionLocal
-from app.models import EmailTemplate, EmailBrandingSettings, SchedulerSettings
+from app.models import EmailTemplate, EmailBrandingSettings, SchedulerSettings, Firewall, FirewallTag
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,13 @@ _DDL_STATEMENTS = [
         license_check_hour INTEGER DEFAULT 2,
         smart_check_hour INTEGER DEFAULT 3,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS firewall_tags (
+        id UUID PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )
     """,
 ]
@@ -214,6 +221,27 @@ def _seed_scheduler_settings() -> None:
         db.close()
 
 
+def _seed_firewall_tags_from_existing() -> None:
+    db = SessionLocal()
+    try:
+        existing = {t.name.lower() for t in db.query(FirewallTag).all()}
+        firewalls = db.query(Firewall).all()
+        for fw in firewalls:
+            tags = fw.tags if isinstance(fw.tags, list) else []
+            for raw in tags:
+                name = str(raw).strip()
+                if not name:
+                    continue
+                key = name.lower()
+                if key in existing:
+                    continue
+                db.add(FirewallTag(name=name))
+                existing.add(key)
+        db.commit()
+    finally:
+        db.close()
+
+
 def run() -> None:
     """Entrypoint called from FastAPI lifespan."""
     try:
@@ -221,5 +249,6 @@ def run() -> None:
         _seed_templates()
         _seed_branding()
         _seed_scheduler_settings()
+        _seed_firewall_tags_from_existing()
     except Exception as e:  # noqa: BLE001
         logger.exception(f"Startup migrations failed: {e}")

@@ -39,6 +39,12 @@ export const firewallsAPI = {
     api.post(`/firewalls/${id}/subscription-key`, { subscription_key: subscriptionKey }),
 }
 
+export const firewallTagsAPI = {
+  list: () => api.get('/firewalls/tags'),
+  create: (name) => api.post('/firewalls/tags', { name }),
+  delete: (tagId) => api.delete(`/firewalls/tags/${tagId}`),
+}
+
 // Monitoring API
 export const monitoringAPI = {
   getDashboard: () => api.get('/firewalls/dashboard/summary'),

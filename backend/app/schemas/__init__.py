@@ -316,3 +316,17 @@ class SchedulerSettingsUpdate(BaseModel):
     monitoring_interval_minutes: Optional[int] = None
     license_check_hour: Optional[int] = None
     smart_check_hour: Optional[int] = None
+
+
+# ===== Firewall Tag Schemas =====
+class FirewallTagCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class FirewallTagResponse(BaseModel):
+    id: UUID
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

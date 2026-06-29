@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { firewallsAPI } from '../api/client'
+import { firewallsAPI, firewallTagsAPI } from '../api/client'
 
 const EMPTY_FORM = {
   customer_name: '',
@@ -18,6 +18,7 @@ const EMPTY_FORM = {
   auto_update_window: 'sun:02:00',
   backup_interval: 'daily',
   backup_retention: 30,
+  tags: [],
   notes: '',
   verify_ssl: false,
   location_address: '',
@@ -33,6 +34,10 @@ export default function Firewalls() {
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [searchQuery, setSearchQuery] = useState('')
+  const [tagCatalog, setTagCatalog] = useState([])
+  const [loadingTags, setLoadingTags] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [tagBusy, setTagBusy] = useState(false)
 
   const filteredFirewalls = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -52,6 +57,7 @@ export default function Firewalls() {
 
   useEffect(() => {
     loadFirewalls()
+    loadTags()
   }, [])
 
   const loadFirewalls = async () => {
@@ -69,9 +75,11 @@ export default function Firewalls() {
   }
 
   const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target
+    const { name, value, type, checked, options, multiple } = e.target
     let newValue
-    if (type === 'checkbox') {
+    if (multiple) {
+      newValue = Array.from(options).filter((opt) => opt.selected).map((opt) => opt.value)
+    } else if (type === 'checkbox') {
       newValue = checked
     } else if (type === 'number') {
       newValue = value === '' ? '' : Number(value)
@@ -79,6 +87,51 @@ export default function Firewalls() {
       newValue = value
     }
     setFormData({ ...formData, [name]: newValue })
+  }
+
+  const loadTags = async () => {
+    try {
+      setLoadingTags(true)
+      const response = await firewallTagsAPI.list()
+      setTagCatalog(response.data || response || [])
+    } catch (err) {
+      console.error('Failed to load firewall tags', err)
+    } finally {
+      setLoadingTags(false)
+    }
+  }
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim()
+    if (!name) return
+    setTagBusy(true)
+    setFormError(null)
+    try {
+      await firewallTagsAPI.create(name)
+      setNewTagName('')
+      await loadTags()
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to create tag'
+      setFormError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } finally {
+      setTagBusy(false)
+    }
+  }
+
+  const handleDeleteTag = async (tag) => {
+    if (!window.confirm(`Tag "${tag.name}" wirklich löschen?`)) return
+    setTagBusy(true)
+    setFormError(null)
+    try {
+      await firewallTagsAPI.delete(tag.id)
+      setFormData((prev) => ({ ...prev, tags: (prev.tags || []).filter((t) => t !== tag.name) }))
+      await Promise.all([loadTags(), loadFirewalls()])
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to delete tag'
+      setFormError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } finally {
+      setTagBusy(false)
+    }
   }
 
   // Parse an OPNsense API key file (key=...\nsecret=...) and fill the form.
@@ -119,6 +172,7 @@ export default function Firewalls() {
     try {
       // ip field holds the URL/hostname of the firewall
       const payload = { ...formData }
+      payload.tags = Array.isArray(payload.tags) ? payload.tags : []
       if (payload.license_expiry && !payload.license_expiry.includes('T')) {
         payload.license_expiry = payload.license_expiry + 'T00:00:00'
       }
@@ -195,6 +249,65 @@ export default function Firewalls() {
           )}
 
           <form onSubmit={handleAddFirewall}>
+            {/* Section: Tags */}
+            <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3">Tags</p>
+            <div className="mb-6">
+              <div className="grid md:grid-cols-[1fr_auto] gap-3 mb-3">
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  placeholder="Neuen Tag anlegen (z. B. Produktion)"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateTag}
+                  disabled={tagBusy || !newTagName.trim()}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  Tag erstellen
+                </button>
+              </div>
+              {loadingTags ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">Tags werden geladen...</p>
+              ) : (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {(tagCatalog || []).map((tag) => (
+                    <span key={tag.id} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
+                      {tag.name}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTag(tag)}
+                        disabled={tagBusy}
+                        className="text-indigo-700 dark:text-indigo-300 hover:text-red-600 disabled:opacity-50"
+                        title="Tag löschen"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {(tagCatalog || []).length === 0 && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Noch keine Tags vorhanden. Erstelle zuerst einen oder mehrere Tags.</p>
+                  )}
+                </div>
+              )}
+
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Tags für diese Firewall</label>
+              <select
+                name="tags"
+                multiple
+                value={formData.tags || []}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 min-h-[110px]"
+              >
+                {(tagCatalog || []).map((tag) => (
+                  <option key={tag.id} value={tag.name}>{tag.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Mehrfachauswahl: Strg/Cmd gedrückt halten und Tags anklicken.</p>
+            </div>
+
             {/* Section: Identity */}
             <p className="text-xs font-bold uppercase text-indigo-600 dark:text-indigo-400 tracking-widest mb-3">Identity</p>
             <div className="grid md:grid-cols-2 gap-4 mb-6">
