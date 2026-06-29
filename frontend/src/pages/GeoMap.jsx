@@ -13,25 +13,31 @@ L.Icon.Default.mergeOptions({
   shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-const makeIcon = (color) => L.divIcon({
+const makeIcon = (color, updateCount = 0) => L.divIcon({
   className: '',
-  iconSize: [28, 28],
+  iconSize: [36, 36],
   iconAnchor: [14, 28],
   popupAnchor: [0, -28],
-  html: `<div style="width:28px;height:28px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>`,
+  html: `
+    <div style="position:relative;width:36px;height:36px;">
+      <div style="position:absolute;left:0;bottom:0;width:28px;height:28px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>
+      ${updateCount > 0 ? `<div style="position:absolute;right:0;top:0;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ef4444;color:white;font-size:10px;font-weight:700;line-height:16px;text-align:center;border:1px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.35);">${updateCount > 9 ? '9+' : updateCount}</div>` : ''}
+    </div>
+  `,
 })
 
-const greenIcon  = makeIcon('#22c55e')
-const redIcon    = makeIcon('#ef4444')
-const grayIcon   = makeIcon('#9ca3af')
-const yellowIcon = makeIcon('#f59e0b')
+function colorForFirewall(fw) {
+  if (!fw.online && fw.online !== null) return '#ef4444'
+  if (fw.alerts?.some(a => a.severity === 'critical')) return '#ef4444'
+  if (fw.alerts?.some(a => a.severity === 'warning')) return '#f59e0b'
+  if (fw.online === true) return '#22c55e'
+  return '#9ca3af'
+}
 
 function iconForFirewall(fw) {
-  if (!fw.online && fw.online !== null) return redIcon
-  if (fw.alerts?.some(a => a.severity === 'critical')) return redIcon
-  if (fw.alerts?.some(a => a.severity === 'warning')) return yellowIcon
-  if (fw.online === true) return greenIcon
-  return grayIcon
+  const color = colorForFirewall(fw)
+  const updateCount = Math.max(0, Number(fw.updates_available) || 0)
+  return makeIcon(color, updateCount)
 }
 
 function AutoFit({ markers }) {
@@ -120,6 +126,9 @@ export default function GeoMap() {
           </span>
           <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700">
             <span className="inline-block w-3 h-3 rounded-full bg-gray-400"></span> Unbekannt
+          </span>
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700">
+            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold">1</span> Update verfugbar (Badge am Marker)
           </span>
         </div>
       </div>
