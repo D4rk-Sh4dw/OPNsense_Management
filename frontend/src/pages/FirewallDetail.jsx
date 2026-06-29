@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { firewallsAPI, backupsAPI, updatesAPI } from '../api/client'
+import { firewallsAPI, firewallTagsAPI, backupsAPI, updatesAPI } from '../api/client'
 
 export default function FirewallDetail() {
   const { id } = useParams()
@@ -28,6 +28,7 @@ export default function FirewallDetail() {
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
   const [subscriptionKey, setSubscriptionKey] = useState('')
+  const [tagCatalog, setTagCatalog] = useState([])
 
   // Log filtering & scroll handling
   const [logFilter, setLogFilter] = useState({ action: 'all', iface: 'all', search: '' })
@@ -37,6 +38,7 @@ export default function FirewallDetail() {
 
   useEffect(() => {
     loadAll()
+    loadTagCatalog()
   }, [id])
 
   useEffect(() => {
@@ -120,6 +122,15 @@ export default function FirewallDetail() {
       setLiveServices(null)
     } finally {
       setLoadingServices(false)
+    }
+  }
+
+  const loadTagCatalog = async () => {
+    try {
+      const res = await firewallTagsAPI.list()
+      setTagCatalog(res.data || [])
+    } catch {
+      setTagCatalog([])
     }
   }
 
@@ -317,7 +328,7 @@ export default function FirewallDetail() {
       verify_ssl: !!firewall.verify_ssl,
       license_type: firewall.license_type || '',
       license_expiry: firewall.license_expiry ? firewall.license_expiry.split('T')[0] : '',
-      tags: Array.isArray(firewall.tags) ? firewall.tags.join(', ') : (firewall.tags || ''),
+      tags: Array.isArray(firewall.tags) ? firewall.tags : [],
       notes: firewall.notes || '',
       api_secret: '',
       location_address: firewall.location_address || '',
@@ -335,9 +346,7 @@ export default function FirewallDetail() {
       payload.backup_retention = Math.max(1, parseInt(payload.backup_retention, 10) || 1)
       payload.backup_weekday = Math.max(0, Math.min(6, parseInt(payload.backup_weekday, 10) || 0))
       payload.backup_monthday = Math.max(1, Math.min(31, parseInt(payload.backup_monthday, 10) || 1))
-      payload.tags = typeof payload.tags === 'string'
-        ? payload.tags.split(',').map(t => t.trim()).filter(Boolean)
-        : (payload.tags || [])
+      payload.tags = Array.isArray(payload.tags) ? payload.tags : []
       if (payload.license_expiry && !payload.license_expiry.includes('T')) {
         payload.license_expiry = payload.license_expiry + 'T00:00:00'
       }
@@ -610,8 +619,25 @@ export default function FirewallDetail() {
               <Field label="Backup Retention (Days)" type="number" value={editForm.backup_retention}
                 onChange={v => setEditForm({...editForm, backup_retention: Math.max(1, parseInt(v) || 1)})} />
               <AutoUpdateWindowEditor editForm={editForm} setEditForm={setEditForm} />
-              <Field label="Tags (comma-separated)" value={editForm.tags}
-                onChange={v => setEditForm({...editForm, tags: v})} />
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mb-1">Tags</label>
+                <select
+                  multiple
+                  value={editForm.tags || []}
+                  onChange={(e) => {
+                    const selected = Array.from(e.target.options)
+                      .filter((opt) => opt.selected)
+                      .map((opt) => opt.value)
+                    setEditForm({ ...editForm, tags: selected })
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white dark:bg-gray-800 min-h-[110px]"
+                >
+                  {(tagCatalog || []).map((tag) => (
+                    <option key={tag.id} value={tag.name}>{tag.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Mehrfachauswahl: Strg/Cmd gedrückt halten und Tags anklicken.</p>
+              </div>
               <div className="flex items-center gap-2 col-span-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={editForm.auto_update}
