@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.models import Firewall, Backup, Alert
 from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
-from app.config import get_settings
+from app.config import get_settings, get_now
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -59,7 +59,7 @@ class BackupService:
 
             # Save backup locally
             backup_dir = BackupService._get_backup_directory(firewall.id)
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = get_now().strftime("%Y%m%d_%H%M%S")
             local_filename = f"{timestamp}_{firewall.hostname}.xml"
             filepath = backup_dir / local_filename
 
@@ -108,7 +108,7 @@ class BackupService:
         """
         try:
             retention_days = max(1, int(firewall.backup_retention or 30))
-            cutoff = datetime.utcnow() - timedelta(days=retention_days)
+            cutoff = get_now() - timedelta(days=retention_days)
 
             old_backups = db.query(Backup).filter(
                 Backup.firewall_id == firewall.id,

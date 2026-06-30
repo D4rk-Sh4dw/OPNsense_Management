@@ -8,6 +8,7 @@ from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
 from app.services.email_service import EmailService
 from app.services.backup_service import BackupService
+from app.config import get_now
 from app.services.opnsense_api import (
     extract_firmware_version,
     extract_latest_firmware_version,
@@ -243,7 +244,7 @@ class UpdateService:
                 update_record.status = "success"
                 update_record.version_before = update_record.version_before or extract_firmware_version(status_before)
                 update_record.version_after = None  # no version change – avoid misleading "x → x" display
-                update_record.completed_at = datetime.utcnow()
+                update_record.completed_at = get_now()
                 update_record.log = (
                     f"action=none; reason=no_pending_updates; "
                     f"status={top_msg or 'unknown'}; status_msg={status_msg or 'none'}"
@@ -592,7 +593,7 @@ class UpdateService:
             status_final = status_after or await api_client.get_firmware_status()
             update_record.version_after = extract_firmware_version(status_final)
             update_record.status = "success"
-            update_record.completed_at = datetime.utcnow()
+            update_record.completed_at = get_now()
 
             logger.info(f"Update successful: {update_record.version_before} -> {update_record.version_after}")
 
@@ -603,7 +604,7 @@ class UpdateService:
                 update_record.log = f"{update_record.log}; error={e}"
             else:
                 update_record.log = str(e)
-            update_record.completed_at = datetime.utcnow()
+            update_record.completed_at = get_now()
 
             # Send alert email
             from app.services.email_service import resolve_firewall_recipients
@@ -721,7 +722,7 @@ class UpdateService:
         latest.updates_available = updates_count
         if current_version:
             latest.firmware_version = current_version
-        latest.checked_at = datetime.utcnow()
+        latest.checked_at = get_now()
         db.commit()
 
         return {
@@ -739,7 +740,7 @@ class UpdateService:
         """Get firewalls scheduled for auto-update in current window"""
 
         from datetime import datetime
-        now = datetime.utcnow()
+        now = get_now()
         current_day = now.strftime("%a").lower()[:3]
         current_hour = now.hour
         current_minute = now.minute

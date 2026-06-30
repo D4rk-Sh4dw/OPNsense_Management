@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
-from app.config import get_settings
+from app.config import get_settings, get_now
 from app.models import Firewall, Backup, LicenseNotification, SchedulerSettings
 from app.services.monitoring_service import MonitoringService
 from app.services.backup_service import BackupService
@@ -156,7 +156,7 @@ async def check_license_expiry():
 
     try:
         firewalls = db.query(Firewall).filter(Firewall.license_expiry != None).all()
-        today = datetime.utcnow()
+        today = get_now()
         default_thresholds = [int(x) for x in (settings.LICENSE_ALERT_DAYS or "30,14,7,1").split(",") if x.strip().isdigit()]
 
         for fw in firewalls:
@@ -211,7 +211,7 @@ async def backup_all_firewalls():
     try:
         firewalls = db.query(Firewall).all()
 
-        now = datetime.utcnow()
+        now = get_now()
 
         for fw in firewalls:
             try:

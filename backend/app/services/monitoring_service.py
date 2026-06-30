@@ -11,7 +11,7 @@ from app.services.opnsense_api import (
 )
 from app.services.encryption_service import EncryptionService
 from app.services.email_service import EmailService, resolve_firewall_recipients
-from app.config import get_settings
+from app.config import get_settings, get_now
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -31,7 +31,7 @@ _RECOVERY_STABLE_ONLINE_DELAY = timedelta(minutes=5)
 def _recovery_update_check_due(firewall_id) -> bool:
     """Rate-limit recovery-triggered update checks by global update interval."""
     key = str(firewall_id)
-    now = datetime.utcnow()
+    now = get_now()
     interval_minutes = max(1, int(settings.UPDATE_CHECK_INTERVAL_MINUTES or 30))
     last_run = _RECOVERY_UPDATE_CHECK_LAST_RUN.get(key)
     if last_run and (now - last_run) < timedelta(minutes=interval_minutes):
@@ -52,7 +52,7 @@ async def _maybe_run_recovery_update_check(
     starts over on the next recovery.
     """
     key = str(firewall.id)
-    now = datetime.utcnow()
+    now = get_now()
 
     if not now_online:
         _RECOVERY_ONLINE_SINCE.pop(key, None)
@@ -156,7 +156,7 @@ def resolve_alert_if_open(db: Session, firewall_id, alert_type: str):
     if open_alert:
         firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
         open_alert.resolved = True
-        open_alert.resolved_at = datetime.utcnow()
+        open_alert.resolved_at = get_now()
         db.commit()
 
         # Send one "resolved" notification corresponding to the original alert.
@@ -410,7 +410,7 @@ class MonitoringService:
         if probe_ok:
             now_online = True
             _CONNECTIVITY_FAILURES.pop(fw_key, None)
-            firewall.last_seen = datetime.utcnow()
+            firewall.last_seen = get_now()
             firewall.last_sync_error = None
         else:
             consecutive_failures = _CONNECTIVITY_FAILURES.get(fw_key, 0) + 1
@@ -425,12 +425,12 @@ class MonitoringService:
             row = FirewallStatus(
                 firewall_id=firewall.id,
                 online=now_online,
-                checked_at=datetime.utcnow(),
+                checked_at=get_now(),
             )
             db.add(row)
         else:
             prev.online = now_online
-            prev.checked_at = datetime.utcnow()
+            prev.checked_at = get_now()
             if not now_online:
                 prev.last_error = firewall.last_sync_error
 
@@ -470,7 +470,7 @@ class MonitoringService:
 
         status = FirewallStatus()
         status.firewall_id = firewall.id
-        status.checked_at = datetime.utcnow()
+        status.checked_at = get_now()
 
         try:
             api_secret = EncryptionService.decrypt(firewall.api_secret)
@@ -487,7 +487,7 @@ class MonitoringService:
             # Connectivity check via a cheap call
             await api_client.get_system_information()
             status.online = True
-            firewall.last_seen = datetime.utcnow()
+            firewall.last_seen = get_now()
 
             # Firmware status (read-only): avoid triggering firmware/check during
             # periodic health monitoring to keep load low on OPNsense.
@@ -657,7 +657,7 @@ class MonitoringService:
         if not oldest:
             return
 
-        age = datetime.utcnow() - oldest.checked_at
+        age = get_now() - oldest.checked_at
         if age >= timedelta(days=settings.PENDING_UPDATE_DAYS):
             raise_alert(
                 db, firewall,

@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     CPU_RAM_CONSECUTIVE_CHECKS: int = 3  # how many checks in a row before alerting
     PENDING_UPDATE_DAYS: int = 7        # alert when updates have been available for N days
 
+    # Timezone for logging and scheduling (e.g. "Europe/Berlin", "UTC", "America/New_York")
+    TIMEZONE: str = "UTC"
+
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -64,3 +67,17 @@ class Settings(BaseSettings):
 def get_settings():
     """Get cached settings instance"""
     return Settings()
+
+
+def get_now():
+    """Get current time in configured timezone"""
+    from datetime import datetime, timezone
+    import pytz
+    
+    settings = get_settings()
+    try:
+        tz = pytz.timezone(settings.TIMEZONE)
+    except Exception:
+        tz = pytz.UTC
+    
+    return datetime.now(tz)
