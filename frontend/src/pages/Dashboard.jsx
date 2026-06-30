@@ -306,7 +306,7 @@ export default function Dashboard() {
           <table className="w-full">
             <thead className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
               <tr>
-                <th className="px-4 py-4 text-left text-sm font-semibold">
+                <th className="px-2 py-2 text-left text-xs font-semibold">
                   <input
                     type="checkbox"
                     checked={allFilteredSelected}
@@ -315,23 +315,23 @@ export default function Dashboard() {
                     className="h-4 w-4"
                   />
                 </th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Customer</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Hostname</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">IP Address</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Status</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Firmware</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Edition</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Updates</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Resources</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">Actions</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold">GUI</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Customer</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Hostname</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">IP Address</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Status</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Firmware</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Edition</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Updates</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Resources</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">Actions</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold">GUI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredFirewalls && filteredFirewalls.length > 0 ? (
                 filteredFirewalls.map((fw) => (
                   <tr key={fw.id} className="hover:bg-gray-50 dark:bg-gray-900 transition">
-                    <td className="px-4 py-4">
+                    <td className="px-2 py-2">
                       <input
                         type="checkbox"
                         checked={selectedFirewallIds.includes(fw.id)}
@@ -341,7 +341,7 @@ export default function Dashboard() {
                         title={(fw.updates_available || 0) > 0 ? 'Select for bulk update' : 'No updates available'}
                       />
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-2">
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{fw.customer_name}</span>
                       {Array.isArray(fw.tags) && fw.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
@@ -351,17 +351,17 @@ export default function Dashboard() {
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-gray-700 dark:text-gray-300">{fw.hostname || 'N/A'}</td>
-                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400 font-mono text-sm">{fw.ip}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 text-xs">{fw.hostname || 'N/A'}</td>
+                    <td className="px-3 py-2 text-gray-600 dark:text-gray-400 font-mono text-xs">{fw.ip}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                         fw.online ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
                       }`}>
                         {fw.online ? '🟢 Online' : '🔴 Offline'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-700 dark:text-gray-300 text-sm">{fw.firmware_version || 'Unknown'}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300 text-xs">{fw.firmware_version || 'Unknown'}</td>
+                    <td className="px-3 py-2">
                       {fw.license_type === 'business'
                         ? <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs font-bold rounded-full">Business</span>
                         : fw.license_type === 'community'
@@ -369,14 +369,14 @@ export default function Dashboard() {
                           : <span className="text-gray-400">—</span>
                       }
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-2">
                       {fw.updates_available > 0 ? (
                         <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 rounded-full text-xs font-bold">⚡ {fw.updates_available}</span>
                       ) : (
                         <span className="text-green-600 dark:text-green-400 font-bold">✓ Latest</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm">
+                    <td className="px-3 py-2 text-xs">
                       {fw.cpu_usage !== null || fw.ram_usage !== null ? (
                         <div className="text-gray-700 dark:text-gray-300">
                           <div className="flex items-center gap-2">
@@ -404,29 +404,29 @@ export default function Dashboard() {
                         <span className="text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
                         <Link
                           to={`/firewalls/${fw.id}`}
-                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-bold text-sm"
+                          className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-bold text-xs"                        
                         >
                           Details
                         </Link>
                         <button
                           onClick={() => installOne(fw)}
                           disabled={(fw.updates_available || 0) <= 0 || updatingIds.includes(fw.id)}
-                          className="text-amber-600 hover:text-amber-800 font-bold text-sm disabled:opacity-50"
+                          className="text-amber-600 hover:text-amber-800 font-bold text-xs disabled:opacity-50"
                         >
                           {updatingIds.includes(fw.id) ? 'Starting...' : '⚡ Update'}
                         </button>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-2">
                       <a
                         href={`https://${fw.ip}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-bold text-sm"
+                        className="text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-bold text-xs"
                         title="WebGUI öffnen"
                       >
                         🌐
@@ -436,7 +436,7 @@ export default function Dashboard() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="11" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan="11" className="px-6 py-4 text-center text-xs text-gray-500 dark:text-gray-400">
                     {firewalls && firewalls.length > 0
                       ? 'No firewall matches your search.'
                       : 'No firewalls registered yet. Go to Firewalls tab to add one.'}
