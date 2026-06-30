@@ -742,6 +742,7 @@ class UpdateService:
         now = datetime.utcnow()
         current_day = now.strftime("%a").lower()[:3]
         current_hour = now.hour
+        current_minute = now.minute
 
         # This is a simplified check - in production, use APScheduler
         # For now, just find firewalls with auto_update=True
@@ -752,12 +753,28 @@ class UpdateService:
         scheduled = []
         for fw in firewalls:
             window = fw.auto_update_window  # Format: "sun:02:00"
-            if window:
-                day, time_str = window.split(":")
-                hour, minute = map(int, time_str.split(":"))
+            if not window:
+                continue
+            
+            try:
+                parts = window.split(":")
+                if len(parts) != 3:
+                    logger.warning(f"Invalid auto_update_window format for {fw.hostname}: {window}")
+                    continue
+                
+                day, hour_str, minute_str = parts
+                hour = int(hour_str)
+                minute = int(minute_str)
 
-                # Check if within window (allowing 10 minute grace period)
-                if current_day == day and current_hour == hour:
+                # Check if within window (within 10 minute grace period)
+                # Schedule runs at minute=0 every hour, so we check if:
+                # - Day matches
+                # - Hour matches
+                # - Current minute is within 0-9 (within the hour when cron runs)
+                if current_day == day.lower() and current_hour == hour and current_minute < 10:
                     scheduled.append(fw)
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Failed to parse auto_update_window '{window}' for {fw.hostname}: {e}")
+                continue
 
         return scheduled
