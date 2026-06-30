@@ -23,6 +23,7 @@ class CommentResponse(BaseModel):
 
 
 # ===== User Schemas =====
+class UserBase(BaseModel):
     email: EmailStr
     username: str
 
