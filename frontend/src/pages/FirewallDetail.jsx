@@ -1913,29 +1913,3 @@ function VPNTabPanel({ openvpn, wireguard, loading, onRefresh, subTab, setSubTab
     </div>
   )
 }
-
-
-
-
-                    : 'Never'
-                  return (
-                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                      <td className="py-2 pr-4 font-mono">{p.iface || p.interface || '—'}</td>
-                      <td className="py-2 pr-4 font-semibold max-w-[150px] truncate" title={p.pubkey || p.name}>
-                        {p.name || p.description || (p.pubkey ? p.pubkey.slice(0, 12) + '...' : '—')}
-                      </td>
-                      <td className="py-2 pr-4 font-mono">{p.endpoint || p.allowed_ips || '—'}</td>
-                      <td className={py-2 pr-4 font-mono }>{hsDisplay}</td>
-                      <td className="py-2 pr-4">{formatBytes(p.transfer_rx || p.rx_bytes)}</td>
-                      <td className="py-2 pr-4">{formatBytes(p.transfer_tx || p.tx_bytes)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
-    </div>
-  )
-}
