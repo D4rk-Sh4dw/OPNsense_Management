@@ -113,7 +113,7 @@ export default function FirewallRules() {
   })
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8 w-full">
       <div className="mb-8">
         <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">Firewall Rules</h1>
         <p className="text-gray-600 dark:text-gray-400 mt-2">Read-only view of filter rules and aliases from OPNsense</p>

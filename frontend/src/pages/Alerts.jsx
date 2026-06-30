@@ -100,7 +100,7 @@ export default function Alerts() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-8 w-full">
       {toast && (
         <div className={`fixed top-6 right-6 z-50 px-6 py-3 rounded-lg shadow-lg font-semibold text-white ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
           {toast.msg}

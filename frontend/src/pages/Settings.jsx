@@ -112,7 +112,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-8 w-full space-y-6">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white">
           <h1 className="text-2xl font-black">Global Scheduler Settings</h1>

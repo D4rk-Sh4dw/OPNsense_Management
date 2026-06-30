@@ -100,7 +100,7 @@ export default function GeoMap() {
   const unmapped = firewalls.filter(fw => !fw.location_lat || !fw.location_lon)
 
   return (
-    <div className="p-6 max-w-full mx-auto">
+    <div className="p-6 w-full">
       {toast && (
         <div className={`fixed top-20 right-6 z-[9999] px-5 py-3 rounded-lg shadow-lg text-white font-semibold ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
           {toast.msg}

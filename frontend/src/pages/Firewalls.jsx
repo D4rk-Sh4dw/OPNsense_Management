@@ -207,7 +207,7 @@ export default function Firewalls() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8 w-full">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-4xl font-black text-gray-900 dark:text-gray-100">Managed Firewalls</h1>

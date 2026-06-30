@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-blue-500 to-cyan-500 dark:from-gray-900 dark:via-gray-800 dark:to-indigo-900 transition-colors duration-200">
-      <div className="max-w-6xl mx-auto px-6 py-24">
+      <div className="w-full px-6 py-24">
         <div className="text-center text-white mb-16">
           <h1 className="text-6xl font-black mb-4 drop-shadow-lg">OPNsense Central Management</h1>
           <p className="text-2xl text-blue-100 dark:text-gray-300 drop-shadow-md">

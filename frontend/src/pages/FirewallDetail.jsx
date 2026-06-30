@@ -508,7 +508,7 @@ export default function FirewallDetail() {
     : []
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-8 w-full">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-6 right-6 z-50 px-6 py-3 rounded-lg shadow-lg font-semibold text-white transition-all ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
