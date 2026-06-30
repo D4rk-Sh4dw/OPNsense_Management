@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { firewallsAPI, firewallTagsAPI, backupsAPI, updatesAPI } from '../api/client'
+import { firewallsAPI, firewallTagsAPI, backupsAPI, updatesAPI, idsAPI, rulesAPI, vpnAPI } from '../api/client'
 
 export default function FirewallDetail() {
   const { id } = useParams()
@@ -29,6 +29,25 @@ export default function FirewallDetail() {
   const [toast, setToast] = useState(null)
   const [subscriptionKey, setSubscriptionKey] = useState('')
   const [tagCatalog, setTagCatalog] = useState([])
+  // Bottom tabs: 'logs' | 'ids' | 'rules' | 'vpn'
+  const [bottomTab, setBottomTab] = useState('logs')
+  // IDS tab
+  const [idsAlerts, setIdsAlerts] = useState([])
+  const [idsStatus, setIdsStatus] = useState(null)
+  const [idsLoading, setIdsLoading] = useState(false)
+  const [idsError, setIdsError] = useState(null)
+  // Rules tab
+  const [rulesData, setRulesData] = useState([])
+  const [aliasesData, setAliasesData] = useState([])
+  const [rulesLoading, setRulesLoading] = useState(false)
+  const [rulesSubTab, setRulesSubTab] = useState('rules')
+  const [rulesError, setRulesError] = useState(null)
+  const [rulesSearch, setRulesSearch] = useState('')
+  // VPN tab
+  const [vpnOpenVPN, setVpnOpenVPN] = useState(null)
+  const [vpnWireGuard, setVpnWireGuard] = useState(null)
+  const [vpnLoading, setVpnLoading] = useState(false)
+  const [vpnSubTab, setVpnSubTab] = useState('openvpn')
 
   // Log filtering & scroll handling
   const [logFilter, setLogFilter] = useState({ action: 'all', iface: 'all', search: '' })
@@ -90,6 +109,13 @@ export default function FirewallDetail() {
     return () => clearInterval(interval)
   }, [id, firewall, autoRefresh])
 
+  useEffect(() => {
+    if (!firewall) return
+    if (bottomTab === 'ids' && idsAlerts.length === 0 && !idsLoading) loadIDS()
+    if (bottomTab === 'rules' && rulesData.length === 0 && !rulesLoading) loadRules()
+    if (bottomTab === 'vpn' && vpnOpenVPN === null && vpnWireGuard === null && !vpnLoading) loadVPN()
+  }, [bottomTab, firewall])
+
   const showToast = (msg, ok = true) => {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 3500)
@@ -131,6 +157,78 @@ export default function FirewallDetail() {
       setTagCatalog(res.data || [])
     } catch {
       setTagCatalog([])
+    }
+  }
+
+  const loadIDS = async () => {
+    setIdsLoading(true)
+    setIdsError(null)
+    try {
+      const [alertsRes, statusRes] = await Promise.allSettled([
+        idsAPI.getAlerts(id, 200),
+        idsAPI.getStatus(id),
+      ])
+      if (statusRes.status === 'fulfilled') setIdsStatus(statusRes.value.data)
+      if (alertsRes.status === 'fulfilled') {
+        const data = alertsRes.value.data
+        let rows = []
+        if (Array.isArray(data)) rows = data
+        else if (Array.isArray(data?.rows)) rows = data.rows
+        else if (Array.isArray(data?.data)) rows = data.data
+        setIdsAlerts(rows)
+      } else {
+        const status = alertsRes.reason?.response?.status
+        if (status === 404 || status === 502) setIdsError('not_configured')
+        else setIdsError(alertsRes.reason?.response?.data?.detail || alertsRes.reason?.message)
+      }
+    } finally {
+      setIdsLoading(false)
+    }
+  }
+
+  const loadRules = async () => {
+    setRulesLoading(true)
+    setRulesError(null)
+    try {
+      const [rulesRes, aliasesRes] = await Promise.allSettled([
+        rulesAPI.getRules(id),
+        rulesAPI.getAliases(id),
+      ])
+      if (rulesRes.status === 'fulfilled') {
+        const data = rulesRes.value.data
+        let rows = []
+        if (Array.isArray(data)) rows = data
+        else if (Array.isArray(data?.rows)) rows = data.rows
+        else if (Array.isArray(data?.data)) rows = data.data
+        setRulesData(rows)
+      } else {
+        const status = rulesRes.reason?.response?.status
+        if (status === 404 || status === 502) setRulesError('not_configured')
+        else setRulesError(rulesRes.reason?.response?.data?.detail || rulesRes.reason?.message)
+      }
+      if (aliasesRes.status === 'fulfilled') {
+        const data = aliasesRes.value.data
+        let rows = []
+        if (Array.isArray(data)) rows = data
+        else if (Array.isArray(data?.rows)) rows = data.rows
+        setAliasesData(rows)
+      }
+    } finally {
+      setRulesLoading(false)
+    }
+  }
+
+  const loadVPN = async () => {
+    setVpnLoading(true)
+    try {
+      const [ovpnRes, wgRes] = await Promise.allSettled([
+        vpnAPI.getOpenVPN(id),
+        vpnAPI.getWireGuard(id),
+      ])
+      setVpnOpenVPN(ovpnRes.status === 'fulfilled' ? ovpnRes.value.data : null)
+      setVpnWireGuard(wgRes.status === 'fulfilled' ? wgRes.value.data : null)
+    } finally {
+      setVpnLoading(false)
     }
   }
 
@@ -565,20 +663,77 @@ export default function FirewallDetail() {
         serviceAction={serviceAction}
       />
 
-      {/* Live Logs */}
-      <LiveLogsCard
-        logs={logs}
-        loadingLogs={loadingLogs}
-        logType={logType}
-        setLogType={setLogType}
-        onRefresh={loadLogs}
-        filter={logFilter}
-        setFilter={setLogFilter}
-        autoFollow={autoFollowLogs}
-        setAutoFollow={setAutoFollowLogs}
-        containerRef={logContainerRef}
-        formatLogEntry={formatLogEntry}
-      />
+      {/* Bottom Panel: Logs / IDS / Rules / VPN */}
+      <div className="mb-8">
+        {/* Tab bar */}
+        <div className="flex gap-2 mb-0 flex-wrap">
+          {[
+            ['logs', '📋 Logs'],
+            ['ids', '🛡 IDS'],
+            ['rules', '📜 Rules'],
+            ['vpn', '🔒 VPN'],
+          ].map(([t, l]) => (
+            <button key={t} onClick={() => setBottomTab(t)}
+              className={`px-4 py-2 rounded-t-lg font-semibold text-sm transition border-b-2 ${
+                bottomTab === t
+                  ? 'bg-white dark:bg-gray-800 border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'bg-gray-100 dark:bg-gray-700 border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}>{l}</button>
+          ))}
+        </div>
+
+        {bottomTab === 'logs' && (
+          <LiveLogsCard
+            logs={logs}
+            loadingLogs={loadingLogs}
+            logType={logType}
+            setLogType={setLogType}
+            onRefresh={loadLogs}
+            filter={logFilter}
+            setFilter={setLogFilter}
+            autoFollow={autoFollowLogs}
+            setAutoFollow={setAutoFollowLogs}
+            containerRef={logContainerRef}
+            formatLogEntry={formatLogEntry}
+          />
+        )}
+
+        {bottomTab === 'ids' && (
+          <IDSTabPanel
+            alerts={idsAlerts}
+            status={idsStatus}
+            loading={idsLoading}
+            error={idsError}
+            onRefresh={loadIDS}
+            firewallId={id}
+          />
+        )}
+
+        {bottomTab === 'rules' && (
+          <RulesTabPanel
+            rules={rulesData}
+            aliases={aliasesData}
+            loading={rulesLoading}
+            error={rulesError}
+            onRefresh={loadRules}
+            subTab={rulesSubTab}
+            setSubTab={setRulesSubTab}
+            search={rulesSearch}
+            setSearch={setRulesSearch}
+          />
+        )}
+
+        {bottomTab === 'vpn' && (
+          <VPNTabPanel
+            openvpn={vpnOpenVPN}
+            wireguard={vpnWireGuard}
+            loading={vpnLoading}
+            onRefresh={loadVPN}
+            subTab={vpnSubTab}
+            setSubTab={setVpnSubTab}
+          />
+        )}
+      </div>
 
       {/* Edit Modal */}
       {editOpen && (
@@ -1159,6 +1314,524 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
     if (autoFollow) {
       el.scrollTop = el.scrollHeight
     } else {
+      const delta = el.scrollHeight - prevScrollRef.current.height
+      el.scrollTop = prevScrollRef.current.top + (delta > 0 ? delta : 0)
+    }
+    prevScrollRef.current = { top: el.scrollTop, height: el.scrollHeight }
+  }, [filteredLogs, autoFollow, containerRef])
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Live Logs</h2>
+        <div className="flex gap-2 flex-wrap">
+          {['firewall', 'system', 'backend'].map(t => (
+            <button key={t} onClick={() => setLogType(t)}
+              className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${logType === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>
+              {t}
+            </button>
+          ))}
+          <button onClick={onRefresh} className="px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-700 hover:bg-gray-200">
+            🔄
+          </button>
+        </div>
+      </div>
+
+      {logType === 'firewall' && (
+        <div className="flex flex-wrap gap-2 mb-3 items-center">
+          <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+            {[['all', 'All'], ['pass', '✓ Pass'], ['block', '✕ Block']].map(([v, l]) => (
+              <button key={v} onClick={() => setFilter({ ...filter, action: v })}
+                className={`px-3 py-1 rounded text-xs font-semibold transition ${
+                  filter.action === v
+                    ? v === 'pass' ? 'bg-green-600 text-white'
+                    : v === 'block' ? 'bg-red-600 text-white'
+                    : 'bg-indigo-600 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                }`}>{l}</button>
+            ))}
+          </div>
+          {interfaces.length > 0 && (
+            <select value={filter.iface} onChange={e => setFilter({ ...filter, iface: e.target.value })}
+              className="px-3 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 border-0">
+              <option value="all">All interfaces</option>
+              {interfaces.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+          )}
+          <input type="text" placeholder="Search IP, port, protocol..."
+            value={filter.search}
+            onChange={e => setFilter({ ...filter, search: e.target.value })}
+            className="px-3 py-1 rounded-lg text-xs border bg-white dark:bg-gray-800 flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+          <span className="text-xs text-gray-500 dark:text-gray-400">{filteredLogs.length}/{logs.length}</span>
+        </div>
+      )}
+
+      <div ref={containerRef} onScroll={handleScroll}
+        className="bg-gray-900 rounded-lg p-4 h-80 overflow-y-auto font-mono text-xs">
+        {loadingLogs && logs.length === 0 ? (
+          <p className="text-gray-400">Loading logs...</p>
+        ) : filteredLogs.length > 0 ? (
+          filteredLogs.map((log, i) => (
+            <div key={i} className={`mb-1 whitespace-pre-wrap break-all ${lineClass(log)}`}>
+              {formatLogEntry(log)}
+            </div>
+          ))
+        ) : logs.length > 0 ? (
+          <p className="text-gray-400">No entries match the current filter.</p>
+        ) : (
+          <p className="text-gray-400">No log entries found.</p>
+        )}
+      </div>
+      {!autoFollow && (
+        <button onClick={() => setAutoFollow(true)}
+          className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-semibold">
+          ↓ Jump to latest
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ===== IDS Tab Panel =====
+function IDSTabPanel({ alerts, status, loading, error, onRefresh }) {
+  const [filter, setFilter] = useState({ action: 'all', search: '' })
+
+  const idsRunning = status?.status === 'running' || status?.running === true || status?.ids_status === 'running'
+
+  const filteredAlerts = useMemo(() => {
+    return alerts.filter(a => {
+      const action = String(a.action || a.alert?.action || '').toLowerCase()
+      if (filter.action === 'alert' && action !== 'alert') return false
+      if (filter.action === 'drop' && !(action === 'drop' || action === 'reject')) return false
+      if (filter.search) {
+        const needle = filter.search.toLowerCase()
+        const hay = [a.src_ip, a.dest_ip, a.src_port, a.dest_port,
+          a.alert?.signature, a.alert?.category, a.proto, a.signature
+        ].filter(Boolean).map(String).join(' ').toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
+      return true
+    })
+  }, [alerts, filter])
+
+  const actionBadge = (a) => {
+    const action = String(a.action || a.alert?.action || '').toLowerCase()
+    if (action === 'drop' || action === 'reject') return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+    if (action === 'alert') return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200'
+    return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-b-xl rounded-tr-xl shadow p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">IDS Alerts</h2>
+          {status && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${idsRunning ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+              {idsRunning ? '🟢 Running' : '🔴 Stopped'}
+            </span>
+          )}
+        </div>
+        <button onClick={onRefresh} disabled={loading}
+          className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+          {loading ? 'Loading...' : '🔄 Refresh'}
+        </button>
+      </div>
+
+      {error === 'not_configured' ? (
+        <div className="py-8 text-center">
+          <p className="text-5xl mb-3">🛡️</p>
+          <p className="font-semibold text-gray-700 dark:text-gray-300">IDS not configured</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Suricata (os-suricata) does not appear to be installed or enabled.</p>
+        </div>
+      ) : error ? (
+        <div className="text-red-600 dark:text-red-400 text-sm p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">{error}</div>
+      ) : loading && alerts.length === 0 ? (
+        <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>
+      ) : alerts.length === 0 ? (
+        <div className="py-8 text-center text-gray-500 dark:text-gray-400">No IDS alerts found.</div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2 mb-3 items-center">
+            <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              {[['all', 'All'], ['alert', '⚠ Alert'], ['drop', '✕ Drop']].map(([v, l]) => (
+                <button key={v} onClick={() => setFilter(f => ({ ...f, action: v }))}
+                  className={`px-3 py-1 rounded text-xs font-semibold transition ${
+                    filter.action === v
+                      ? v === 'drop' ? 'bg-red-600 text-white' : v === 'alert' ? 'bg-yellow-500 text-white' : 'bg-indigo-600 text-white'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                  }`}>{l}</button>
+              ))}
+            </div>
+            <input type="text" placeholder="Search IP, signature..."
+              value={filter.search}
+              onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
+              className="flex-1 px-3 py-1 rounded-lg text-xs border bg-white dark:bg-gray-800 min-w-[150px] focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+            <span className="text-xs text-gray-500 dark:text-gray-400">{filteredAlerts.length}/{alerts.length}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-400 uppercase border-b text-xs">
+                  <th className="py-2 pr-3">Time</th>
+                  <th className="py-2 pr-3">Action</th>
+                  <th className="py-2 pr-3">Src</th>
+                  <th className="py-2 pr-3">Dst</th>
+                  <th className="py-2 pr-3">Proto</th>
+                  <th className="py-2 pr-3">Signature</th>
+                  <th className="py-2 pr-3">Severity</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {filteredAlerts.map((a, i) => {
+                  const ts = a.timestamp || a['@timestamp'] || ''
+                  const action = a.action || a.alert?.action || '—'
+                  const src = `${a.src_ip || '—'}${a.src_port ? ':' + a.src_port : ''}`
+                  const dst = `${a.dest_ip || '—'}${a.dest_port ? ':' + a.dest_port : ''}`
+                  const sig = a.alert?.signature || a.signature || a.msg || '—'
+                  return (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                      <td className="py-2 pr-3 font-mono text-gray-500 whitespace-nowrap">{ts ? new Date(ts).toLocaleTimeString() : '—'}</td>
+                      <td className="py-2 pr-3"><span className={`px-1.5 py-0.5 rounded font-bold ${actionBadge(a)}`}>{action}</span></td>
+                      <td className="py-2 pr-3 font-mono">{src}</td>
+                      <td className="py-2 pr-3 font-mono">{dst}</td>
+                      <td className="py-2 pr-3">{a.proto || '—'}</td>
+                      <td className="py-2 pr-3 max-w-xs truncate" title={sig}>{sig}</td>
+                      <td className="py-2 pr-3 font-mono">{a.alert?.severity || a.severity || '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ===== Rules Tab Panel =====
+function RulesTabPanel({ rules, aliases, loading, error, onRefresh, subTab, setSubTab, search, setSearch }) {
+  const [actionFilter, setActionFilter] = useState('all')
+
+  const filteredRules = useMemo(() => {
+    return rules.filter(r => {
+      const action = String(r.action || '').toLowerCase()
+      if (actionFilter === 'pass' && !(action === 'pass' || action === 'allow')) return false
+      if (actionFilter === 'block' && !(action === 'block' || action === 'reject' || action === 'drop')) return false
+      if (search) {
+        const needle = search.toLowerCase()
+        const hay = [r.description, r.descr, r.protocol, r.interface, r.action]
+          .filter(Boolean).map(String).join(' ').toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
+      return true
+    })
+  }, [rules, actionFilter, search])
+
+  const filteredAliases = useMemo(() => {
+    if (!search) return aliases
+    const needle = search.toLowerCase()
+    return aliases.filter(a => [a.name, a.type, a.description, a.content]
+      .filter(Boolean).map(String).join(' ').toLowerCase().includes(needle))
+  }, [aliases, search])
+
+  const actionBadge = (action) => {
+    const a = String(action || '').toLowerCase()
+    if (a === 'pass' || a === 'allow') return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+    if (a === 'block' || a === 'reject' || a === 'drop') return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+    return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-b-xl rounded-tr-xl shadow p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex gap-2">
+          {[['rules', '🛡 Rules'], ['aliases', '📋 Aliases']].map(([t, l]) => (
+            <button key={t} onClick={() => setSubTab(t)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${subTab === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <button onClick={onRefresh} disabled={loading}
+          className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+          {loading ? 'Loading...' : '🔄 Refresh'}
+        </button>
+      </div>
+
+      {error === 'not_configured' ? (
+        <div className="py-8 text-center">
+          <p className="text-5xl mb-3">🔌</p>
+          <p className="font-semibold text-gray-700 dark:text-gray-300">Could not load rules</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Firewall API not reachable or endpoint not available.</p>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2 mb-3 items-center">
+            {subTab === 'rules' && (
+              <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                {[['all', 'All'], ['pass', '✓ Pass'], ['block', '✕ Block']].map(([v, l]) => (
+                  <button key={v} onClick={() => setActionFilter(v)}
+                    className={`px-3 py-1 rounded text-xs font-semibold transition ${
+                      actionFilter === v
+                        ? v === 'pass' ? 'bg-green-600 text-white' : v === 'block' ? 'bg-red-600 text-white' : 'bg-indigo-600 text-white'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                    }`}>{l}</button>
+                ))}
+              </div>
+            )}
+            <input type="text" placeholder="Search..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 px-3 py-1 rounded-lg text-xs border bg-white dark:bg-gray-800 min-w-[150px] focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {subTab === 'rules' ? `${filteredRules.length}/${rules.length}` : `${filteredAliases.length}/${aliases.length}`}
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>
+          ) : subTab === 'rules' ? (
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="min-w-full text-xs">
+                <thead className="sticky top-0 bg-white dark:bg-gray-800">
+                  <tr className="text-left text-gray-400 uppercase border-b">
+                    <th className="py-2 pr-3">#</th>
+                    <th className="py-2 pr-3">Action</th>
+                    <th className="py-2 pr-3">Interface</th>
+                    <th className="py-2 pr-3">Protocol</th>
+                    <th className="py-2 pr-3">Source</th>
+                    <th className="py-2 pr-3">Destination</th>
+                    <th className="py-2 pr-3">Description</th>
+                    <th className="py-2 pr-3">On</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {filteredRules.length === 0 ? (
+                    <tr><td colSpan="8" className="py-6 text-center text-gray-500">No rules found.</td></tr>
+                  ) : filteredRules.map((r, i) => {
+                    const action = r.action || '—'
+                    const iface = Array.isArray(r.interface) ? r.interface.join(', ') : (r.interface || r.if || '—')
+                    const src = r.source?.network || r.source?.address || r.src || 'any'
+                    const dst = r.destination?.network || r.destination?.address || r.dst || 'any'
+                    const desc = r.description || r.descr || '—'
+                    const enabled = r.enabled === '1' || r.enabled === true || r.enabled === 1
+                    return (
+                      <tr key={i} className={`hover:bg-gray-50 dark:hover:bg-gray-900/50 ${!enabled ? 'opacity-50' : ''}`}>
+                        <td className="py-2 pr-3 font-mono text-gray-500">{r.sequence || i + 1}</td>
+                        <td className="py-2 pr-3"><span className={`px-1.5 py-0.5 rounded font-bold ${actionBadge(action)}`}>{action}</span></td>
+                        <td className="py-2 pr-3 font-mono">{iface}</td>
+                        <td className="py-2 pr-3">{r.protocol || r.proto || 'any'}</td>
+                        <td className="py-2 pr-3 font-mono max-w-[120px] truncate">{typeof src === 'object' ? JSON.stringify(src) : src}</td>
+                        <td className="py-2 pr-3 font-mono max-w-[120px] truncate">{typeof dst === 'object' ? JSON.stringify(dst) : dst}</td>
+                        <td className="py-2 pr-3 max-w-xs truncate" title={desc}>{desc}</td>
+                        <td className="py-2 pr-3"><span className={`px-1.5 py-0.5 rounded font-bold text-xs ${enabled ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{enabled ? 'Yes' : 'No'}</span></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="min-w-full text-xs">
+                <thead className="sticky top-0 bg-white dark:bg-gray-800">
+                  <tr className="text-left text-gray-400 uppercase border-b">
+                    <th className="py-2 pr-3">Name</th>
+                    <th className="py-2 pr-3">Type</th>
+                    <th className="py-2 pr-3">Content</th>
+                    <th className="py-2 pr-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {filteredAliases.length === 0 ? (
+                    <tr><td colSpan="4" className="py-6 text-center text-gray-500">No aliases found.</td></tr>
+                  ) : filteredAliases.map((a, i) => {
+                    const content = a.content || a.address || a.network || ''
+                    const contentStr = typeof content === 'object' ? Object.keys(content).join(', ') : String(content)
+                    return (
+                      <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                        <td className="py-2 pr-3 font-mono font-semibold">{a.name || '—'}</td>
+                        <td className="py-2 pr-3"><span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold">{a.type || '—'}</span></td>
+                        <td className="py-2 pr-3 font-mono max-w-[200px] truncate" title={contentStr}>{contentStr || '—'}</td>
+                        <td className="py-2 pr-3">{a.description || a.descr || '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ===== VPN Tab Panel =====
+function VPNTabPanel({ openvpn, wireguard, loading, onRefresh, subTab, setSubTab }) {
+  const ovpnSessions = useMemo(() => {
+    if (!openvpn) return []
+    if (Array.isArray(openvpn)) return openvpn
+    if (Array.isArray(openvpn?.rows)) return openvpn.rows
+    if (Array.isArray(openvpn?.data)) return openvpn.data
+    return []
+  }, [openvpn])
+
+  const wgPeers = useMemo(() => {
+    if (!wireguard) return []
+    const data = wireguard?.data
+    if (!data) return []
+    // Handshakes format: { WG_IFACE: { peers: { pubkey: { last_handshake, rx, tx } } } }
+    if (wireguard.type === 'handshakes' && typeof data === 'object') {
+      const peers = []
+      Object.entries(data).forEach(([iface, ifaceData]) => {
+        if (typeof ifaceData?.peers === 'object') {
+          Object.entries(ifaceData.peers).forEach(([pubkey, peer]) => {
+            peers.push({ iface, pubkey, ...peer })
+          })
+        }
+      })
+      return peers
+    }
+    // Client list format
+    if (wireguard.type === 'clients') {
+      if (Array.isArray(data?.rows)) return data.rows
+      if (Array.isArray(data)) return data
+    }
+    return []
+  }, [wireguard])
+
+  const handshakeColor = (ts) => {
+    if (!ts || ts === '0001-01-01T00:00:00Z' || ts === '1970-01-01T00:00:00Z') return 'text-gray-400'
+    const minutes = (Date.now() - new Date(ts).getTime()) / 60000
+    if (minutes < 5) return 'text-green-600 dark:text-green-400'
+    if (minutes < 60) return 'text-yellow-600 dark:text-yellow-400'
+    return 'text-red-600 dark:text-red-400'
+  }
+
+  const formatBytes = (bytes) => {
+    if (!bytes || bytes === 0) return '—'
+    const n = Number(bytes)
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+    if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+    return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-b-xl rounded-tr-xl shadow p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex gap-2">
+          {[['openvpn', '🔐 OpenVPN'], ['wireguard', '⚡ WireGuard']].map(([t, l]) => (
+            <button key={t} onClick={() => setSubTab(t)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${subTab === t ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <button onClick={onRefresh} disabled={loading}
+          className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+          {loading ? 'Loading...' : '🔄 Refresh'}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>
+      ) : subTab === 'openvpn' ? (
+        openvpn === null ? (
+          <div className="py-8 text-center">
+            <p className="text-4xl mb-3">🔐</p>
+            <p className="font-semibold text-gray-700 dark:text-gray-300">OpenVPN not available</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Plugin not installed or no sessions active.</p>
+          </div>
+        ) : ovpnSessions.length === 0 ? (
+          <div className="py-6 text-center text-gray-500 dark:text-gray-400">No active OpenVPN sessions.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-400 uppercase border-b">
+                  <th className="py-2 pr-4">Client</th>
+                  <th className="py-2 pr-4">Real IP</th>
+                  <th className="py-2 pr-4">Virtual IP</th>
+                  <th className="py-2 pr-4">Connected Since</th>
+                  <th className="py-2 pr-4">Bytes In</th>
+                  <th className="py-2 pr-4">Bytes Out</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {ovpnSessions.map((s, i) => (
+                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                    <td className="py-2 pr-4 font-semibold">{s.common_name || s.username || s.name || '—'}</td>
+                    <td className="py-2 pr-4 font-mono">{s.real_address || s.real_ip || s.remote || '—'}</td>
+                    <td className="py-2 pr-4 font-mono">{s.virtual_address || s.virtual_ip || s.local || '—'}</td>
+                    <td className="py-2 pr-4">{s.connected_since ? new Date(s.connected_since * 1000 || s.connected_since).toLocaleString() : '—'}</td>
+                    <td className="py-2 pr-4">{formatBytes(s.bytes_received || s.bytes_recv)}</td>
+                    <td className="py-2 pr-4">{formatBytes(s.bytes_sent)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : (
+        wireguard === null ? (
+          <div className="py-8 text-center">
+            <p className="text-4xl mb-3">⚡</p>
+            <p className="font-semibold text-gray-700 dark:text-gray-300">WireGuard not available</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Plugin not installed or no peers configured.</p>
+          </div>
+        ) : wgPeers.length === 0 ? (
+          <div className="py-6 text-center text-gray-500 dark:text-gray-400">No WireGuard peers found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-400 uppercase border-b">
+                  <th className="py-2 pr-4">Interface</th>
+                  <th className="py-2 pr-4">Peer / Name</th>
+                  <th className="py-2 pr-4">Endpoint</th>
+                  <th className="py-2 pr-4">Last Handshake</th>
+                  <th className="py-2 pr-4">RX</th>
+                  <th className="py-2 pr-4">TX</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {wgPeers.map((p, i) => {
+                  const hs = p.last_handshake || p.latest_handshake || p.last_handshake_time
+                  const hsDisplay = hs && hs !== '0001-01-01T00:00:00Z'
+                    ? new Date(typeof hs === 'number' ? hs * 1000 : hs).toLocaleString()
+                    : 'Never'
+                  return (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                      <td className="py-2 pr-4 font-mono">{p.iface || p.interface || '—'}</td>
+                      <td className="py-2 pr-4 font-semibold max-w-[150px] truncate" title={p.pubkey || p.name}>
+                        {p.name || p.description || (p.pubkey ? p.pubkey.slice(0, 12) + '...' : '—')}
+                      </td>
+                      <td className="py-2 pr-4 font-mono">{p.endpoint || p.allowed_ips || '—'}</td>
+                      <td className={`py-2 pr-4 font-mono ${handshakeColor(hs)}`}>{hsDisplay}</td>
+                      <td className="py-2 pr-4">{formatBytes(p.transfer_rx || p.rx_bytes)}</td>
+                      <td className="py-2 pr-4">{formatBytes(p.transfer_tx || p.tx_bytes)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (autoFollow) {
+      el.scrollTop = el.scrollHeight
+    } else {
       // Restore previous scroll offset relative to bottom so content above stays in view
       const delta = el.scrollHeight - prevScrollRef.current.height
       el.scrollTop = prevScrollRef.current.top + (delta > 0 ? delta : 0)
@@ -1243,3 +1916,26 @@ function LiveLogsCard({ logs, loadingLogs, logType, setLogType, onRefresh, filte
 
 
 
+
+                    : 'Never'
+                  return (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                      <td className="py-2 pr-4 font-mono">{p.iface || p.interface || '—'}</td>
+                      <td className="py-2 pr-4 font-semibold max-w-[150px] truncate" title={p.pubkey || p.name}>
+                        {p.name || p.description || (p.pubkey ? p.pubkey.slice(0, 12) + '...' : '—')}
+                      </td>
+                      <td className="py-2 pr-4 font-mono">{p.endpoint || p.allowed_ips || '—'}</td>
+                      <td className={py-2 pr-4 font-mono }>{hsDisplay}</td>
+                      <td className="py-2 pr-4">{formatBytes(p.transfer_rx || p.rx_bytes)}</td>
+                      <td className="py-2 pr-4">{formatBytes(p.transfer_tx || p.tx_bytes)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+    </div>
+  )
+}

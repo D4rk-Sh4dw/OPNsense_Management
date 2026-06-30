@@ -61,6 +61,11 @@ export const backupsAPI = {
   delete: (firewallId, backupId) => api.delete(`/backups/firewalls/${firewallId}/backups/${backupId}`),
   downloadUrl: (firewallId, backupId) =>
     `/api/backups/firewalls/${firewallId}/backups/${backupId}/download`,
+  diff: (firewallId, backupIdA, backupIdB) =>
+    api.post(`/backups/firewalls/${firewallId}/diff`, {
+      backup_id_a: backupIdA,
+      backup_id_b: backupIdB,
+    }),
 }
 
 // Updates API
@@ -95,6 +100,35 @@ export const emailAPI = {
 export const settingsAPI = {
   getScheduler: () => api.get('/settings/scheduler'),
   updateScheduler: (data) => api.patch('/settings/scheduler', data),
+}
+
+// Comments API
+export const commentsAPI = {
+  list: (entityType, entityId) => api.get(`/comments/${entityType}/${entityId}`),
+  create: (entityType, entityId, content, author) =>
+    api.post(`/comments/${entityType}/${entityId}`, { content, author }),
+  delete: (commentId) => api.delete(`/comments/${commentId}`),
+}
+
+// IDS / Intrusion Detection API
+export const idsAPI = {
+  getAlerts: (firewallId, limit = 200) =>
+    api.get(`/firewalls/${firewallId}/ids/alerts`, { params: { limit } }),
+  getStatus: (firewallId) => api.get(`/firewalls/${firewallId}/ids/status`),
+}
+
+// Firewall Rules & Aliases API
+export const rulesAPI = {
+  getRules: (firewallId, limit = 500) =>
+    api.get(`/firewalls/${firewallId}/rules`, { params: { limit } }),
+  getAliases: (firewallId, limit = 500) =>
+    api.get(`/firewalls/${firewallId}/aliases`, { params: { limit } }),
+}
+
+// VPN API
+export const vpnAPI = {
+  getOpenVPN: (firewallId) => api.get(`/firewalls/${firewallId}/vpn/openvpn`),
+  getWireGuard: (firewallId) => api.get(`/firewalls/${firewallId}/vpn/wireguard`),
 }
 
 export default api

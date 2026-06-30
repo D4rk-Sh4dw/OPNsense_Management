@@ -136,6 +136,18 @@ class LicenseNotification(Base):
     sent_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Comment(Base):
+    """Notes/comments attached to alerts or backups"""
+    __tablename__ = "comments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type = Column(String(20), nullable=False)  # 'alert' | 'backup'
+    entity_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    author = Column(String(100), default='CMS')
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SchedulerSettings(Base):
     """Global scheduler settings editable via GUI."""
     __tablename__ = "scheduler_settings"

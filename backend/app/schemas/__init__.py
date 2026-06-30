@@ -4,8 +4,25 @@ from typing import Optional, List
 from uuid import UUID
 
 
+# ===== Comment Schemas =====
+class CommentCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=2000)
+    author: Optional[str] = Field(None, max_length=100)
+
+
+class CommentResponse(BaseModel):
+    id: UUID
+    entity_type: str
+    entity_id: UUID
+    content: str
+    author: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ===== User Schemas =====
-class UserBase(BaseModel):
     email: EmailStr
     username: str
 

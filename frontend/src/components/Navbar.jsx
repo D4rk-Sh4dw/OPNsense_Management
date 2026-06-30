@@ -28,6 +28,8 @@ export default function Navbar() {
               <li><Link to="/email" className={`pb-2 transition ${isActive('/email')}`}>E-Mail</Link></li>
               <li><Link to="/map" className={`pb-2 transition ${isActive('/map')}`}>Karte</Link></li>
               <li><Link to="/settings" className={`pb-2 transition ${isActive('/settings')}`}>Settings</Link></li>
+              <li><Link to="/ids" className={`pb-2 transition ${isActive('/ids')}`}>IDS</Link></li>
+              <li><Link to="/rules" className={`pb-2 transition ${isActive('/rules')}`}>Rules</Link></li>
             </ul>
             <button
               onClick={toggleTheme}
@@ -76,6 +78,8 @@ export default function Navbar() {
             <li><Link to="/email" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>E-Mail</Link></li>
             <li><Link to="/map" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Karte</Link></li>
             <li><Link to="/settings" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Settings</Link></li>
+            <li><Link to="/ids" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>IDS</Link></li>
+            <li><Link to="/rules" className="block pb-2" onClick={() => setMobileMenuOpen(false)}>Rules</Link></li>
           </ul>
         )}
       </div>

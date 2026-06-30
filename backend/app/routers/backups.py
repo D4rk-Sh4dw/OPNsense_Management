@@ -1,9 +1,11 @@
+import difflib
 import logging
 import os
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+import xml.dom.minidom
 from sqlalchemy.orm import Session
 from app.database import get_db, SessionLocal
 from app.models import Firewall, Backup
@@ -151,3 +153,67 @@ async def delete_backup(
     db.commit()
 
     return {"message": "Backup deleted"}
+
+
+class DiffBody(BaseModel):
+    backup_id_a: str
+    backup_id_b: str
+
+
+def _pretty_xml(filepath: str) -> str:
+    """Read and pretty-print an XML backup file. Returns raw text on parse failure."""
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        raw = f.read()
+    try:
+        dom = xml.dom.minidom.parseString(raw.encode("utf-8"))
+        return dom.toprettyxml(indent="  ", encoding=None)
+    except Exception:
+        return raw
+
+
+@router.post("/firewalls/{firewall_id}/diff")
+async def diff_backups(
+    firewall_id: str,
+    body: DiffBody,
+    db: Session = Depends(get_db),
+):
+    """Compare two backups and return a unified diff"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+
+    backup_a = db.query(Backup).filter(Backup.id == body.backup_id_a).first()
+    backup_b = db.query(Backup).filter(Backup.id == body.backup_id_b).first()
+
+    if not backup_a or str(backup_a.firewall_id) != str(firewall_id):
+        raise HTTPException(status_code=404, detail="Backup A not found")
+    if not backup_b or str(backup_b.firewall_id) != str(firewall_id):
+        raise HTTPException(status_code=404, detail="Backup B not found")
+
+    for b in (backup_a, backup_b):
+        if not b.filepath or not os.path.exists(b.filepath):
+            raise HTTPException(status_code=404, detail=f"Backup file missing on disk: {b.filename}")
+
+    text_a = _pretty_xml(backup_a.filepath).splitlines()
+    text_b = _pretty_xml(backup_b.filepath).splitlines()
+
+    diff_lines = list(difflib.unified_diff(
+        text_a,
+        text_b,
+        fromfile=backup_a.filename,
+        tofile=backup_b.filename,
+        lineterm="",
+    ))
+
+    additions = sum(1 for l in diff_lines if l.startswith("+") and not l.startswith("+++"))
+    deletions = sum(1 for l in diff_lines if l.startswith("-") and not l.startswith("---"))
+
+    return {
+        "file_a": backup_a.filename,
+        "file_b": backup_b.filename,
+        "date_a": backup_a.created_at.isoformat(),
+        "date_b": backup_b.created_at.isoformat(),
+        "additions": additions,
+        "deletions": deletions,
+        "lines": diff_lines,
+    }

@@ -720,3 +720,84 @@ class OPNsenseAPI:
         """POST /api/core/backup/restore - upload a configuration XML (legacy; may not exist on all versions)"""
         data = {"crypto": crypto, "payload": payload}
         return await self._request("POST", "/core/backup/restore", json=data)
+
+    # ===== IDS / Intrusion Detection (Suricata) =====
+
+    async def get_ids_alerts(self, limit: int = 200) -> Dict[str, Any]:
+        """Query Suricata IDS alerts - POST /api/ids/service/queryAlerts"""
+        payload = {
+            "current": 1,
+            "rowCount": limit,
+            "sort": {},
+            "searchPhrase": "",
+        }
+        try:
+            return await self._request("POST", "/ids/service/queryAlerts", json=payload, silent=True)
+        except Exception:
+            # Fallback: some versions use GET with params
+            try:
+                return await self._request("GET", "/ids/service/queryAlerts", silent=True)
+            except Exception as e:
+                raise
+
+    async def get_ids_status(self) -> Dict[str, Any]:
+        """GET /api/ids/service/status"""
+        return await self._request("GET", "/ids/service/status", silent=True)
+
+    # ===== Firewall Rules & Aliases =====
+
+    async def get_firewall_rules(self, limit: int = 500) -> Dict[str, Any]:
+        """List firewall filter rules - POST /api/firewall/filter/searchRule"""
+        payload = {
+            "current": 1,
+            "rowCount": limit,
+            "sort": {"sequence": "asc"},
+            "searchPhrase": "",
+        }
+        try:
+            return await self._request("POST", "/firewall/filter/searchRule", json=payload, silent=True)
+        except Exception:
+            return await self._request("GET", "/firewall/filter/searchRule", silent=True)
+
+    async def get_firewall_aliases(self, limit: int = 500) -> Dict[str, Any]:
+        """List firewall aliases - POST /api/firewall/alias/searchItem"""
+        payload = {
+            "current": 1,
+            "rowCount": limit,
+            "sort": {},
+            "searchPhrase": "",
+        }
+        try:
+            return await self._request("POST", "/firewall/alias/searchItem", json=payload, silent=True)
+        except Exception:
+            return await self._request("GET", "/firewall/alias/searchItem", silent=True)
+
+    # ===== VPN =====
+
+    async def get_openvpn_sessions(self) -> Dict[str, Any]:
+        """List active OpenVPN sessions - POST /api/openvpn/service/searchSessions"""
+        payload = {"current": 1, "rowCount": 500, "sort": {}, "searchPhrase": ""}
+        try:
+            return await self._request("POST", "/openvpn/service/searchSessions", json=payload, silent=True)
+        except Exception:
+            return await self._request("GET", "/openvpn/service/searchSessions", silent=True)
+
+    async def get_wireguard_status(self) -> Dict[str, Any]:
+        """WireGuard peer status - tries showhandshakes then showconf"""
+        try:
+            data = await self._request("GET", "/wireguard/service/showhandshakes", silent=True)
+            if data:
+                return {"type": "handshakes", "data": data}
+        except Exception:
+            pass
+        try:
+            data = await self._request("GET", "/wireguard/service/show", silent=True)
+            if data:
+                return {"type": "show", "data": data}
+        except Exception:
+            pass
+        # Last resort: client list
+        payload = {"current": 1, "rowCount": 500, "sort": {}, "searchPhrase": ""}
+        data = await self._request("POST", "/wireguard/client/searchClient", json=payload, silent=True)
+        return {"type": "clients", "data": data}
+

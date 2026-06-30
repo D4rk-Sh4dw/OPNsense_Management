@@ -891,3 +891,49 @@ async def update_api_secret(
     firewall.api_secret = EncryptionService.encrypt(new_secret)
     db.commit()
     return {"message": "API secret updated"}
+
+
+# ===== IDS / Intrusion Detection =====
+
+@router.get("/{firewall_id}/ids/alerts")
+async def get_ids_alerts(
+    firewall_id: str,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+):
+    """Fetch IDS/IPS alerts (Suricata) from OPNsense"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        data = await api.get_ids_alerts(limit=limit)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/{firewall_id}/ids/status")
+async def get_ids_status(
+    firewall_id: str,
+    db: Session = Depends(get_db),
+):
+    """Fetch IDS service status from OPNsense"""
+    firewall = db.query(Firewall).filter(Firewall.id == firewall_id).first()
+    if not firewall:
+        raise HTTPException(status_code=404, detail="Firewall not found")
+    try:
+        api_secret = EncryptionService.decrypt(firewall.api_secret)
+        api = OPNsenseAPI(
+            firewall.ip, firewall.api_key, api_secret,
+            firewall.verify_ssl, firewall.ssl_cert_path,
+        )
+        data = await api.get_ids_status()
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+

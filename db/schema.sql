@@ -134,6 +134,18 @@ CREATE TABLE IF NOT EXISTS license_notifications (
 CREATE INDEX IF NOT EXISTS idx_license_notif_fk ON license_notifications(firewall_id);
 CREATE INDEX IF NOT EXISTS idx_license_notif_sent ON license_notifications(sent_at DESC);
 
+-- Comments table (notes on alerts and backups)
+CREATE TABLE IF NOT EXISTS comments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('alert', 'backup')),
+    entity_id UUID NOT NULL,
+    content TEXT NOT NULL,
+    author VARCHAR(100) DEFAULT 'CMS',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_comments_created ON comments(created_at DESC);
+
 -- Global scheduler settings (singleton id=1)
 CREATE TABLE IF NOT EXISTS scheduler_settings (
     id INTEGER PRIMARY KEY,

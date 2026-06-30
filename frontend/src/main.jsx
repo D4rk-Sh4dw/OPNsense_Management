@@ -13,6 +13,8 @@ import Alerts from './pages/Alerts'
 import EmailSettings from './pages/EmailSettings'
 import GeoMap from './pages/GeoMap'
 import Settings from './pages/Settings'
+import IDSDashboard from './pages/IDSDashboard'
+import FirewallRules from './pages/FirewallRules'
 
 function App() {
   return (
@@ -30,6 +32,8 @@ function App() {
             <Route path="/email" element={<EmailSettings />} />
             <Route path="/map" element={<GeoMap />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/ids" element={<IDSDashboard />} />
+            <Route path="/rules" element={<FirewallRules />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
