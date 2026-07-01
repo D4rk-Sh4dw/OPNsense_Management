@@ -55,6 +55,11 @@ class ConfigHistoryService:
         logger.info(f"Processing {len(items)} backup items for {firewall.hostname}")
         added = 0
         skipped = 0
+        
+        # Log the first item to see the actual structure
+        if items and len(items) > 0:
+            logger.info(f"First item structure: {items[0]}")
+        
         for idx, item in enumerate(items):
             if not isinstance(item, dict):
                 logger.debug(f"Skipping item {idx}: not a dict, type={type(item)}")
