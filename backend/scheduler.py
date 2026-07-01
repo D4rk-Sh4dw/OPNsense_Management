@@ -14,6 +14,7 @@ from app.models import Firewall, Backup, LicenseNotification, SchedulerSettings
 from app.services.monitoring_service import MonitoringService
 from app.services.backup_service import BackupService
 from app.services.update_service import UpdateService
+from app.services.config_history_service import ConfigHistoryService
 from app.services.email_service import EmailService, resolve_firewall_recipients
 from app.services.opnsense_api import OPNsenseAPI
 from app.services.encryption_service import EncryptionService
@@ -379,6 +380,27 @@ def refresh_scheduler_jobs(scheduler: BlockingScheduler):
         logger.warning(f"Could not reschedule jobs dynamically: {e}")
 
 
+async def sync_config_history_all_firewalls():
+    """Sync config history from all firewalls (hourly)."""
+    logger.info("Syncing config history from all firewalls...")
+    db = _new_session()
+
+    try:
+        firewalls = db.query(Firewall).all()
+        total_added = 0
+        for fw in firewalls:
+            try:
+                added = await ConfigHistoryService.sync_revisions(db, fw)
+                total_added += added
+            except Exception as e:
+                logger.error(f"Config history sync failed for {fw.hostname}: {e}")
+        logger.info(f"Config history sync completed: +{total_added} revisions total")
+    except Exception as e:
+        logger.error(f"Config history sync failed: {e}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Start APScheduler with all tasks (blocking)"""
 
@@ -457,6 +479,16 @@ def start_scheduler():
         args=[smart_check_all_firewalls],
         id='smart_check',
         name='Daily S.M.A.R.T. disk check'
+    )
+
+    scheduler.add_job(
+        sync_job,
+        'cron',
+        hour='*',
+        minute=0,
+        args=[sync_config_history_all_firewalls],
+        id='sync_config_history',
+        name='Sync firewall config history (hourly)'
     )
 
     scheduler.add_job(

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import firewalls, backups, updates, alerts, email, settings as app_settings, comments, rules, vpn
+from app.routers import firewalls, backups, config_history, updates, alerts, email, settings as app_settings, comments, rules, vpn
 from app import migrations
 
 # Configure logging
@@ -47,6 +47,7 @@ app.add_middleware(
 # Include routers
 app.include_router(firewalls.router)
 app.include_router(backups.router)
+app.include_router(config_history.router)
 app.include_router(updates.router)
 app.include_router(alerts.router)
 app.include_router(email.router)

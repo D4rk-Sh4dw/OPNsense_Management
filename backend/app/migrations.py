@@ -43,6 +43,26 @@ _DDL_STATEMENTS = [
     CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments(entity_type, entity_id)
     """,
     """
+    CREATE TABLE IF NOT EXISTS config_history (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        firewall_id UUID NOT NULL REFERENCES firewalls(id) ON DELETE CASCADE,
+        revision_id VARCHAR(200) NOT NULL,
+        revision_date TIMESTAMP WITH TIME ZONE NOT NULL,
+        changed_by VARCHAR(200),
+        summary TEXT,
+        config_hash VARCHAR(64),
+        size_bytes BIGINT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (firewall_id, revision_id)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_config_history_fk ON config_history(firewall_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_config_history_date ON config_history(firewall_id, revision_date DESC)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS scheduler_settings (
         id INTEGER PRIMARY KEY,
         monitoring_interval_seconds INTEGER DEFAULT 10,

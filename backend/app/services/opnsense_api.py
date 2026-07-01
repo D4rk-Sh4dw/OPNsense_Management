@@ -528,6 +528,14 @@ class OPNsenseAPI:
         """POST /api/core/backup/revert_backup/{filename} - restore a remote backup"""
         return await self._request("POST", f"/core/backup/revert_backup/{filename}", json={})
 
+    async def get_backup_diff(self, filename_a: str, filename_b: str, host: str = "this") -> Dict[str, Any]:
+        """GET /api/core/backup/diff/{host},{filename_a},{filename_b}
+        
+        Returns OPNsense's built-in diff. Falls back gracefully if not supported (404 or empty).
+        """
+        endpoint = f"/core/backup/diff/{host},{filename_a},{filename_b}"
+        return await self._request("GET", endpoint, silent=True)
+
     # ===== Diagnostics: System =====
     async def get_system_information(self) -> Dict[str, Any]:
         """GET /api/diagnostics/system/systemInformation"""

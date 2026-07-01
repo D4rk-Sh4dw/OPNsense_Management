@@ -96,6 +96,21 @@ class Backup(Base):
     last_error = Column(Text, nullable=True)
 
 
+class ConfigHistory(Base):
+    """Firewall configuration revisions (change history)"""
+    __tablename__ = "config_history"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    firewall_id = Column(UUID(as_uuid=True), ForeignKey("firewalls.id"), nullable=False, index=True)
+    revision_id = Column(String(200), nullable=False)  # OPNsense filename/revision marker
+    revision_date = Column(DateTime, nullable=False)   # when the change was made on firewall
+    changed_by = Column(String(200), nullable=True)    # user/source who changed it
+    summary = Column(Text, nullable=True)               # description/filename
+    config_hash = Column(String(64), nullable=True)    # SHA-256 of XML content
+    size_bytes = Column(BigInteger, nullable=True)     # size of the remote config
+    created_at = Column(DateTime, default=datetime.utcnow)  # when we added this to DB
+
+
 class Alert(Base):
     """System alerts and alarms"""
     __tablename__ = "alerts"

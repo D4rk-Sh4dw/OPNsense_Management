@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { firewallsAPI, firewallTagsAPI, backupsAPI, updatesAPI, idsAPI, rulesAPI, vpnAPI } from '../api/client'
+import { firewallsAPI, firewallTagsAPI, backupsAPI, updatesAPI, idsAPI, rulesAPI, vpnAPI, configHistoryAPI } from '../api/client'
 
 export default function FirewallDetail() {
   const { id } = useParams()
@@ -48,6 +48,13 @@ export default function FirewallDetail() {
   const [vpnWireGuard, setVpnWireGuard] = useState(null)
   const [vpnLoading, setVpnLoading] = useState(false)
   const [vpnSubTab, setVpnSubTab] = useState('openvpn')
+  // Config History tab
+  const [configHistory, setConfigHistory] = useState([])
+  const [configHistoryLoading, setConfigHistoryLoading] = useState(false)
+  const [configHistoryError, setConfigHistoryError] = useState(null)
+  const [configHistorySelection, setConfigHistorySelection] = useState({ a: null, b: null })
+  const [diffModal, setDiffModal] = useState(null)
+  const [revertModal, setRevertModal] = useState(null)
 
   // Log filtering & scroll handling
   const [logFilter, setLogFilter] = useState({ action: 'all', iface: 'all', search: '' })
@@ -229,6 +236,19 @@ export default function FirewallDetail() {
       setVpnWireGuard(wgRes.status === 'fulfilled' ? wgRes.value.data : null)
     } finally {
       setVpnLoading(false)
+    }
+  }
+
+  const loadConfigHistory = async () => {
+    setConfigHistoryLoading(true)
+    setConfigHistoryError(null)
+    try {
+      const res = await configHistoryAPI.list(id)
+      setConfigHistory(res.data || [])
+    } catch (err) {
+      setConfigHistoryError(err.message || 'Failed to load config history')
+    } finally {
+      setConfigHistoryLoading(false)
     }
   }
 
@@ -663,7 +683,7 @@ export default function FirewallDetail() {
         serviceAction={serviceAction}
       />
 
-      {/* Bottom Panel: Logs / IDS / Rules / VPN */}
+      {/* Bottom Panel: Logs / IDS / Rules / VPN / Config History */}
       <div className="mb-8">
         {/* Tab bar */}
         <div className="flex gap-2 mb-0 flex-wrap">
@@ -672,8 +692,12 @@ export default function FirewallDetail() {
             ['ids', '🛡 IDS'],
             ['rules', '📜 Rules'],
             ['vpn', '🔒 VPN'],
+            ['config-history', '📝 Config History'],
           ].map(([t, l]) => (
-            <button key={t} onClick={() => setBottomTab(t)}
+            <button key={t} onClick={() => {
+              setBottomTab(t)
+              if (t === 'config-history') loadConfigHistory()
+            }}
               className={`px-4 py-2 rounded-t-lg font-semibold text-sm transition border-b-2 ${
                 bottomTab === t
                   ? 'bg-white dark:bg-gray-800 border-indigo-600 text-indigo-600 dark:text-indigo-400'
@@ -731,6 +755,20 @@ export default function FirewallDetail() {
             onRefresh={loadVPN}
             subTab={vpnSubTab}
             setSubTab={setVpnSubTab}
+          />
+        )}
+
+        {bottomTab === 'config-history' && (
+          <ConfigHistoryTabPanel
+            configHistory={configHistory}
+            loading={configHistoryLoading}
+            error={configHistoryError}
+            onRefresh={loadConfigHistory}
+            onSync={() => {
+              configHistoryAPI.sync(id).then(() => loadConfigHistory()).catch(e => setConfigHistoryError(e.message))
+            }}
+            firewallId={id}
+            configHistoryAPI={configHistoryAPI}
           />
         )}
       </div>
@@ -1821,6 +1859,194 @@ function VPNTabPanel({ openvpn, wireguard, loading, onRefresh, subTab, setSubTab
             </table>
           </div>
         )
+      )}
+    </div>
+  )
+}
+
+function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSync, firewallId, configHistoryAPI }) {
+  const [selected, setSelected] = useState({ a: null, b: null })
+  const [diffModal, setDiffModal] = useState(null)
+  const [revertModal, setRevertModal] = useState(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+  const [revertLoading, setRevertLoading] = useState(false)
+  const [syncLoading, setSyncLoading] = useState(false)
+
+  const handleSync = async () => {
+    setSyncLoading(true)
+    try {
+      await onSync()
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  const handleDiff = async () => {
+    if (!selected.a || !selected.b) return
+    setDiffLoading(true)
+    try {
+      const res = await configHistoryAPI.diff(firewallId, selected.a, selected.b)
+      setDiffModal(res.data)
+    } catch (err) {
+      alert(`Diff failed: ${err.message}`)
+    } finally {
+      setDiffLoading(false)
+    }
+  }
+
+  const handleRevert = async (revisionId) => {
+    setRevertModal({ revisionId, step: 'confirm' })
+  }
+
+  const confirmRevert = async () => {
+    setRevertLoading(true)
+    try {
+      await configHistoryAPI.revert(firewallId, revertModal.revisionId, true)
+      alert('Revert successful! Firewall config has been restored.')
+      setRevertModal(null)
+      onRefresh()
+    } catch (err) {
+      alert(`Revert failed: ${err.message}`)
+    } finally {
+      setRevertLoading(false)
+    }
+  }
+
+  if (loading) return <div className="p-6 text-center">Loading config history...</div>
+  if (error) return <div className="p-6 text-red-600">{error}</div>
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-md p-6">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Configuration History</h3>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSync}
+            disabled={syncLoading}
+            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {syncLoading ? 'Syncing...' : '🔄 Sync from Firewall'}
+          </button>
+          <button
+            onClick={onRefresh}
+            className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+          >
+            ↻ Refresh
+          </button>
+        </div>
+      </div>
+
+      {configHistory.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">No config revisions found</div>
+      ) : (
+        <>
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full text-sm border-collapse">
+              <thead className="bg-gray-100 dark:bg-gray-700">
+                <tr>
+                  <th className="px-4 py-2 text-left">Select</th>
+                  <th className="px-4 py-2 text-left">Revision</th>
+                  <th className="px-4 py-2 text-left">Date</th>
+                  <th className="px-4 py-2 text-left">User</th>
+                  <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-left">Size</th>
+                  <th className="px-4 py-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {configHistory.map(rev => (
+                  <tr key={rev.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-4 py-2">
+                      <input
+                        type="radio"
+                        name="a"
+                        checked={selected.a === rev.id}
+                        onChange={() => setSelected({ ...selected, a: rev.id })}
+                      />
+                      {' '}
+                      <input
+                        type="radio"
+                        name="b"
+                        checked={selected.b === rev.id}
+                        onChange={() => setSelected({ ...selected, b: rev.id })}
+                      />
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs">{rev.revision_id}</td>
+                    <td className="px-4 py-2 text-sm">{new Date(rev.revision_date).toLocaleString()}</td>
+                    <td className="px-4 py-2">{rev.changed_by || '—'}</td>
+                    <td className="px-4 py-2">{rev.summary || '—'}</td>
+                    <td className="px-4 py-2 text-right">{rev.size_bytes ? (rev.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</td>
+                    <td className="px-4 py-2 text-center">
+                      <button
+                        onClick={() => handleRevert(rev.id)}
+                        className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                      >
+                        ↻ Revert
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleDiff}
+              disabled={!selected.a || !selected.b || diffLoading}
+              className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {diffLoading ? 'Comparing...' : '📊 Compare Selected'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Diff Modal */}
+      {diffModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto">
+            <div className="sticky top-0 p-4 border-b bg-white dark:bg-gray-800 flex justify-between items-center">
+              <h4 className="font-bold">Diff: {diffModal.revision_a} → {diffModal.revision_b}</h4>
+              <button onClick={() => setDiffModal(null)} className="text-xl">×</button>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                Additions: <span className="text-green-600">+{diffModal.additions}</span> | Deletions: <span className="text-red-600">-{diffModal.deletions}</span>
+              </p>
+              <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded font-mono text-xs overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap break-words">
+                {diffModal.lines.join('\n')}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revert Confirmation Modal */}
+      {revertModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-6 max-w-md">
+            <h4 className="font-bold text-lg mb-4">Confirm Revert</h4>
+            <p className="text-sm mb-4">
+              This will restore the firewall to the selected configuration revision. A backup will be created beforehand as a safety net.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setRevertModal(null)}
+                className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRevert}
+                disabled={revertLoading}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {revertLoading ? 'Reverting...' : 'Confirm Revert'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

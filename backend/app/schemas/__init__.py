@@ -194,6 +194,32 @@ class BackupResponse(BaseModel):
         from_attributes = True
 
 
+# ===== Config History Schemas =====
+class ConfigHistoryResponse(BaseModel):
+    id: UUID
+    firewall_id: UUID
+    revision_id: str
+    revision_date: datetime
+    changed_by: Optional[str]
+    summary: Optional[str]
+    config_hash: Optional[str]
+    size_bytes: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConfigHistoryDiffRequest(BaseModel):
+    revision_a: str  # UUID string
+    revision_b: str  # UUID string
+
+
+class ConfigHistoryRevertRequest(BaseModel):
+    revision_id: str
+    create_backup: bool = True
+
+
 # ===== Alert Schemas =====
 class AlertResponse(BaseModel):
     id: UUID

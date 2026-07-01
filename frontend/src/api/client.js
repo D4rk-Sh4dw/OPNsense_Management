@@ -68,6 +68,22 @@ export const backupsAPI = {
     }),
 }
 
+// Config History API
+export const configHistoryAPI = {
+  list: (firewallId) => api.get(`/config-history/firewalls/${firewallId}`),
+  sync: (firewallId) => api.post(`/config-history/firewalls/${firewallId}/sync`),
+  diff: (firewallId, revisionA, revisionB) =>
+    api.post(`/config-history/firewalls/${firewallId}/diff`, {
+      revision_a: revisionA,
+      revision_b: revisionB,
+    }),
+  revert: (firewallId, revisionId, createBackup = true) =>
+    api.post(`/config-history/firewalls/${firewallId}/revert`, {
+      revision_id: revisionId,
+      create_backup: createBackup,
+    }),
+}
+
 // Updates API
 export const updatesAPI = {
   checkUpdates: (firewallId) => api.post(`/updates/firewalls/${firewallId}/check`),
