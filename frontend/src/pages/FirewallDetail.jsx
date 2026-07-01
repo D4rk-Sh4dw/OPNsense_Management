@@ -1714,7 +1714,6 @@ function RulesTabPanel({ rules, aliases, loading, error, onRefresh, subTab, setS
               </div>
             </div>
           )}
-        </>
       )}
     </div>
   )
