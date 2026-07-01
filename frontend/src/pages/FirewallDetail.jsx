@@ -1877,6 +1877,9 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
   const [diffLoading, setDiffLoading] = useState(false)
   const [revertLoading, setRevertLoading] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
+  const [expandedRevisionId, setExpandedRevisionId] = useState(null)
+  const [expandLoading, setExpandLoading] = useState(false)
+  const [expandedDiff, setExpandedDiff] = useState(null)
 
   const handleSync = async () => {
     setSyncLoading(true)
@@ -1890,6 +1893,38 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
       console.error('Config history sync error:', err)
     } finally {
       setSyncLoading(false)
+    }
+  }
+
+  const handleExpand = async (revisionId, revisionIndex) => {
+    if (expandedRevisionId === revisionId) {
+      // Collapse if already expanded
+      setExpandedRevisionId(null)
+      setExpandedDiff(null)
+      return
+    }
+
+    // Find the next (newer) revision to compare against
+    const nextRevisionIndex = revisionIndex + 1
+    const nextRevision = nextRevisionIndex < configHistory.length ? configHistory[nextRevisionIndex] : null
+
+    if (!nextRevision) {
+      // No next revision, can't show diff
+      setExpandedRevisionId(revisionId)
+      setExpandedDiff({ lines: [], additions: 0, deletions: 0, note: 'This is the newest revision' })
+      return
+    }
+
+    setExpandedRevisionId(revisionId)
+    setExpandLoading(true)
+    try {
+      const res = await configHistoryAPI.diff(firewallId, revisionId, nextRevision.id)
+      setExpandedDiff(res.data)
+    } catch (err) {
+      console.error('Expand diff error:', err)
+      setExpandedDiff({ lines: [], additions: 0, deletions: 0, error: 'Failed to load changes' })
+    } finally {
+      setExpandLoading(false)
     }
   }
 
@@ -1956,6 +1991,7 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
             <table className="w-full text-sm border-collapse">
               <thead className="bg-gray-100 dark:bg-gray-700">
                 <tr>
+                  <th className="px-4 py-2 text-left w-8"></th>
                   <th className="px-4 py-2 text-left">Select</th>
                   <th className="px-4 py-2 text-left">Revision</th>
                   <th className="px-4 py-2 text-left">Date</th>
@@ -1966,37 +2002,79 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
                 </tr>
               </thead>
               <tbody>
-                {configHistory.map(rev => (
-                  <tr key={rev.id} className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-2">
-                      <input
-                        type="radio"
-                        name="a"
-                        checked={selected.a === rev.id}
-                        onChange={() => setSelected({ ...selected, a: rev.id })}
-                      />
-                      {' '}
-                      <input
-                        type="radio"
-                        name="b"
-                        checked={selected.b === rev.id}
-                        onChange={() => setSelected({ ...selected, b: rev.id })}
-                      />
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs">{rev.revision_id}</td>
-                    <td className="px-4 py-2 text-sm">{new Date(rev.revision_date).toLocaleString()}</td>
-                    <td className="px-4 py-2">{rev.changed_by || '—'}</td>
-                    <td className="px-4 py-2">{rev.summary || '—'}</td>
-                    <td className="px-4 py-2 text-right">{rev.size_bytes ? (rev.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</td>
-                    <td className="px-4 py-2 text-center">
-                      <button
-                        onClick={() => handleRevert(rev.id)}
-                        className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                      >
-                        ↻ Revert
-                      </button>
-                    </td>
-                  </tr>
+                {configHistory.map((rev, idx) => (
+                  <React.Fragment key={rev.id}>
+                    <tr className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-2 text-center">
+                        <button
+                          onClick={() => handleExpand(rev.id, idx)}
+                          className="text-lg hover:bg-gray-200 dark:hover:bg-gray-600 rounded p-1"
+                          title="Show changes in this revision"
+                        >
+                          {expandedRevisionId === rev.id ? '▼' : '▶'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="radio"
+                          name="a"
+                          checked={selected.a === rev.id}
+                          onChange={() => setSelected({ ...selected, a: rev.id })}
+                        />
+                        {' '}
+                        <input
+                          type="radio"
+                          name="b"
+                          checked={selected.b === rev.id}
+                          onChange={() => setSelected({ ...selected, b: rev.id })}
+                        />
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs">{rev.revision_id}</td>
+                      <td className="px-4 py-2 text-sm">{new Date(rev.revision_date).toLocaleString()}</td>
+                      <td className="px-4 py-2">{rev.changed_by || '—'}</td>
+                      <td className="px-4 py-2">{rev.summary || '—'}</td>
+                      <td className="px-4 py-2 text-right">{rev.size_bytes ? (rev.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</td>
+                      <td className="px-4 py-2 text-center">
+                        <button
+                          onClick={() => handleRevert(rev.id)}
+                          className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                        >
+                          ↻ Revert
+                        </button>
+                      </td>
+                    </tr>
+                    {expandedRevisionId === rev.id && (
+                      <tr className="bg-blue-50 dark:bg-gray-700 border-b-2 dark:border-gray-600">
+                        <td colSpan="8" className="px-4 py-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm">Changes in this revision:</span>
+                              {expandLoading && <span className="text-sm text-gray-600">Loading...</span>}
+                            </div>
+                            {expandedDiff && (
+                              <>
+                                {expandedDiff.error ? (
+                                  <div className="text-red-600 text-sm">{expandedDiff.error}</div>
+                                ) : expandedDiff.note ? (
+                                  <div className="text-gray-600 dark:text-gray-400 text-sm italic">{expandedDiff.note}</div>
+                                ) : (
+                                  <>
+                                    <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                                      <div>Additions: <span className="text-green-600 font-semibold">+{expandedDiff.additions}</span></div>
+                                      <div>Deletions: <span className="text-red-600 font-semibold">-{expandedDiff.deletions}</span></div>
+                                    </div>
+                                    <div className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-300 dark:border-gray-600 font-mono text-xs overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
+                                      {expandedDiff.lines.length > 0 ? expandedDiff.lines.join('\n') : '(no changes or empty config)'}
+                                    </div>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
