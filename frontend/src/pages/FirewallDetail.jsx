@@ -1641,9 +1641,10 @@ function RulesTabPanel({ rules, aliases, loading, error, onRefresh, subTab, setS
           {loading ? (
             <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>
           ) : subTab === 'rules' ? (
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="min-w-full text-xs">
-                <thead className="sticky top-0 bg-white dark:bg-gray-800">
+            <div className="overflow-x-auto">
+              <div className="max-h-80 overflow-y-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="sticky top-0 bg-white dark:bg-gray-800 z-10">
                   <tr className="text-left text-gray-400 uppercase border-b">
                     <th className="py-2 pr-3">#</th>
                     <th className="py-2 pr-3">Action</th>
@@ -1682,9 +1683,10 @@ function RulesTabPanel({ rules, aliases, loading, error, onRefresh, subTab, setS
               </table>
             </div>
           ) : (
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="min-w-full text-xs">
-                <thead className="sticky top-0 bg-white dark:bg-gray-800">
+            <div className="overflow-x-auto">
+              <div className="max-h-80 overflow-y-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="sticky top-0 bg-white dark:bg-gray-800 z-10">
                   <tr className="text-left text-gray-400 uppercase border-b">
                     <th className="py-2 pr-3">Name</th>
                     <th className="py-2 pr-3">Type</th>
@@ -1709,6 +1711,7 @@ function RulesTabPanel({ rules, aliases, loading, error, onRefresh, subTab, setS
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>
