@@ -1996,9 +1996,9 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
   if (error) return <div className="p-6 text-red-600">{error}</div>
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-md overflow-hidden flex flex-col h-full">
-      {/* Fixed Header */}
-      <div className="flex-shrink-0 bg-white dark:bg-gray-800 p-6 pb-4 border-b dark:border-gray-700 shadow-md">
+    <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-md">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 p-6 pb-4 border-b dark:border-gray-700 shadow-md">
         <div className="flex justify-between items-center gap-4">
           <h3 className="text-lg font-semibold whitespace-nowrap">Configuration History</h3>
           <div className="flex gap-2 flex-wrap">
@@ -2026,27 +2026,26 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="p-6">
         {configHistory.length === 0 ? (
           <div className="text-center py-8 text-gray-500">No config revisions found</div>
         ) : (
           <>
-            <div className="overflow-x-auto border dark:border-gray-700 rounded-lg">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
-                <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
+                <thead className="bg-gray-100 dark:bg-gray-700 sticky top-16 z-20">
                   <tr>
                     <th className="px-4 py-2 text-left w-8"></th>
                     <th className="px-4 py-2 text-left">Select</th>
-                      <th className="px-4 py-2 text-left">Revision</th>
-                      <th className="px-4 py-2 text-left">Date</th>
-                      <th className="px-4 py-2 text-left">User</th>
-                      <th className="px-4 py-2 text-left">Description</th>
-                      <th className="px-4 py-2 text-left">Size</th>
-                      <th className="px-4 py-2 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                    <th className="px-4 py-2 text-left">Revision</th>
+                    <th className="px-4 py-2 text-left">Date</th>
+                  <th className="px-4 py-2 text-left">User</th>
+                  <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-left">Size</th>
+                  <th className="px-4 py-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
                 {configHistory.map((rev, idx) => (
                   <React.Fragment key={rev.id}>
                     <tr className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
@@ -2123,11 +2122,10 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
                 ))}
               </tbody>
             </table>
-            </div>
-          </>
-        )}
+          </div>
+        </>
+      )}
       </div>
-    </div>
 
       {/* Diff Modal */}
       {diffModal && (
