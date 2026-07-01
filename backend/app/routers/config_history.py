@@ -45,10 +45,13 @@ async def sync_revisions(firewall_id: str, db: Session = Depends(get_db)):
     if not firewall:
         raise HTTPException(status_code=404, detail="Firewall not found")
     
+    logger.info(f"Manual config history sync triggered for {firewall.hostname} ({firewall.ip})")
     try:
         added = await ConfigHistoryService.sync_revisions(db, firewall)
-        return {"firewall_id": firewall_id, "added": added}
+        logger.info(f"Sync completed for {firewall.hostname}: +{added} revisions")
+        return {"firewall_id": str(firewall_id), "added": added, "status": "success"}
     except Exception as e:
+        logger.exception(f"Config history sync failed for {firewall.hostname}: {e}")
         raise HTTPException(status_code=502, detail=f"Sync failed: {str(e)}")
 
 

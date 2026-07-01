@@ -34,13 +34,15 @@ class ConfigHistoryService:
     async def sync_revisions(db: Session, firewall: Firewall) -> int:
         """Pull config history from OPNsense, store new rows in DB.
         Returns count of NEW revisions added.
+        Raises exception if API call fails.
         """
         api = ConfigHistoryService._make_api_client(firewall)
         try:
             listing = await api.list_remote_backups()
+            logger.info(f"Got config backup listing for {firewall.hostname}: {type(listing)} with keys {list(listing.keys()) if isinstance(listing, dict) else 'N/A'}")
         except Exception as e:
-            logger.error(f"Failed to list config revisions for {firewall.hostname}: {e}")
-            return 0
+            logger.error(f"Failed to list config revisions for {firewall.hostname}: {e}", exc_info=True)
+            raise ValueError(f"Failed to fetch config history from {firewall.hostname}: {str(e)}")
 
         # OPNsense returns either a dict or a plain list. Normalize:
         if isinstance(listing, dict):
@@ -50,6 +52,7 @@ class ConfigHistoryService:
         else:
             items = []
 
+        logger.info(f"Processing {len(items)} backup items for {firewall.hostname}")
         added = 0
         for item in items:
             if not isinstance(item, dict):
@@ -84,7 +87,9 @@ class ConfigHistoryService:
 
         if added > 0:
             db.commit()
-        logger.info(f"ConfigHistory sync for {firewall.hostname}: +{added} revisions")
+            logger.info(f"ConfigHistory sync for {firewall.hostname}: +{added} new revisions stored")
+        else:
+            logger.info(f"ConfigHistory sync for {firewall.hostname}: no new revisions (all already tracked)")
         return added
 
     @staticmethod

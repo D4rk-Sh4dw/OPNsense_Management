@@ -764,8 +764,14 @@ export default function FirewallDetail() {
             loading={configHistoryLoading}
             error={configHistoryError}
             onRefresh={loadConfigHistory}
-            onSync={() => {
-              configHistoryAPI.sync(id).then(() => loadConfigHistory()).catch(e => setConfigHistoryError(e.message))
+            onSync={async () => {
+              try {
+                await configHistoryAPI.sync(id)
+                await loadConfigHistory()
+              } catch (err) {
+                const msg = err.response?.data?.detail || err.message || 'Sync failed'
+                throw new Error(msg)
+              }
             }}
             firewallId={id}
             configHistoryAPI={configHistoryAPI}
@@ -1876,6 +1882,12 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
     setSyncLoading(true)
     try {
       await onSync()
+      // After successful sync, refresh the list
+      setTimeout(() => {}, 500)
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Sync failed'
+      alert(`❌ Sync Error: ${msg}`)
+      console.error('Config history sync error:', err)
     } finally {
       setSyncLoading(false)
     }
