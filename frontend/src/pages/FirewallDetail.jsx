@@ -1997,22 +1997,32 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-md p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Configuration History</h3>
-        <div className="flex gap-2">
-          <button
-            onClick={handleSync}
-            disabled={syncLoading}
-            className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {syncLoading ? 'Syncing...' : '🔄 Sync from Firewall'}
-          </button>
-          <button
-            onClick={onRefresh}
-            className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
-          >
-            ↻ Refresh
-          </button>
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 pb-4 mb-4 border-b dark:border-gray-700">
+        <div className="flex justify-between items-center gap-4">
+          <h3 className="text-lg font-semibold whitespace-nowrap">Configuration History</h3>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={handleSync}
+              disabled={syncLoading}
+              className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              {syncLoading ? 'Syncing...' : '🔄 Sync'}
+            </button>
+            <button
+              onClick={onRefresh}
+              className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+            >
+              ↻ Refresh
+            </button>
+            <button
+              onClick={handleDiff}
+              disabled={!selected.a || !selected.b || diffLoading}
+              className="px-4 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-50 font-semibold"
+            >
+              {diffLoading ? 'Comparing...' : '📊 Compare'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2020,9 +2030,9 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
         <div className="text-center py-8 text-gray-500">No config revisions found</div>
       ) : (
         <>
-          <div className="overflow-x-auto mb-4">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
-              <thead className="bg-gray-100 dark:bg-gray-700">
+              <thead className="bg-gray-100 dark:bg-gray-700 sticky top-14 z-9">
                 <tr>
                   <th className="px-4 py-2 text-left w-8"></th>
                   <th className="px-4 py-2 text-left">Select</th>
@@ -2111,16 +2121,6 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={handleDiff}
-              disabled={!selected.a || !selected.b || diffLoading}
-              className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {diffLoading ? 'Comparing...' : '📊 Compare Selected'}
-            </button>
           </div>
         </>
       )}
