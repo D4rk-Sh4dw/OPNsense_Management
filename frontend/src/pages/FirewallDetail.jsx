@@ -2095,17 +2095,75 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
       {/* Diff Modal */}
       {diffModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-auto">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-auto">
-            <div className="sticky top-0 p-4 border-b bg-white dark:bg-gray-800 flex justify-between items-center">
-              <h4 className="font-bold">Diff: {diffModal.revision_a} → {diffModal.revision_b}</h4>
-              <button onClick={() => setDiffModal(null)} className="text-xl">×</button>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-auto flex flex-col">
+            <div className="sticky top-0 p-6 border-b bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-800 dark:to-indigo-900 flex justify-between items-start rounded-t-lg">
+              <div className="text-white flex-1">
+                <h4 className="font-bold text-lg mb-2">📊 Configuration Comparison</h4>
+                <div className="text-sm text-indigo-100 space-y-1">
+                  <div className="flex gap-4">
+                    <div>
+                      <span className="font-semibold">Version A:</span> {diffModal.revision_a?.substring(0, 30)}...
+                    </div>
+                    <div>
+                      <span className="font-semibold">Version B:</span> {diffModal.revision_b?.substring(0, 30)}...
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setDiffModal(null)} className="text-2xl text-white hover:text-indigo-100 ml-4">×</button>
             </div>
-            <div className="p-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                Additions: <span className="text-green-600">+{diffModal.additions}</span> | Deletions: <span className="text-red-600">-{diffModal.deletions}</span>
-              </p>
-              <div className="bg-gray-100 dark:bg-gray-700 p-3 rounded font-mono text-xs overflow-x-auto max-h-96 overflow-y-auto whitespace-pre-wrap break-words">
-                {diffModal.lines.join('\n')}
+            
+            <div className="p-6 border-b bg-gray-50 dark:bg-gray-700 space-y-3">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-green-50 dark:bg-green-900/30 rounded p-3 border border-green-200 dark:border-green-800">
+                  <div className="text-2xl font-bold text-green-700 dark:text-green-400">+{diffModal.additions}</div>
+                  <div className="text-xs text-green-600 dark:text-green-300 font-semibold">Additions</div>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/30 rounded p-3 border border-red-200 dark:border-red-800">
+                  <div className="text-2xl font-bold text-red-700 dark:text-red-400">−{diffModal.deletions}</div>
+                  <div className="text-xs text-red-600 dark:text-red-300 font-semibold">Deletions</div>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/30 rounded p-3 border border-blue-200 dark:border-blue-800">
+                  <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">{diffModal.lines?.length || 0}</div>
+                  <div className="text-xs text-blue-600 dark:text-blue-300 font-semibold">Total Lines</div>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(diffModal.lines.join('\n'))
+                    alert('✅ Diff copied to clipboard!')
+                  }}
+                  className="px-3 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 font-semibold"
+                >
+                  📋 Copy Diff
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="font-mono text-xs space-y-0">
+                {diffModal.lines.map((line, idx) => {
+                  const isAddition = line.startsWith('+') && !line.startsWith('+++')
+                  const isDeletion = line.startsWith('-') && !line.startsWith('---')
+                  const isHeader = line.startsWith('@@')
+                  
+                  return (
+                    <div
+                      key={idx}
+                      className={`
+                        px-3 py-1 border-l-4 whitespace-pre-wrap break-words
+                        ${isAddition ? 'bg-green-50 dark:bg-green-950/40 border-l-green-500 text-green-700 dark:text-green-300' : ''}
+                        ${isDeletion ? 'bg-red-50 dark:bg-red-950/40 border-l-red-500 text-red-700 dark:text-red-300' : ''}
+                        ${isHeader ? 'bg-gray-200 dark:bg-gray-600 border-l-gray-500 text-gray-700 dark:text-gray-200 font-semibold' : ''}
+                        ${!isAddition && !isDeletion && !isHeader ? 'bg-white dark:bg-gray-800 border-l-gray-300 dark:border-l-gray-600 text-gray-900 dark:text-gray-100' : ''}
+                      `}
+                    >
+                      {line}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
