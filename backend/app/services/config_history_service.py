@@ -54,11 +54,18 @@ class ConfigHistoryService:
 
         logger.info(f"Processing {len(items)} backup items for {firewall.hostname}")
         added = 0
-        for item in items:
+        skipped = 0
+        for idx, item in enumerate(items):
             if not isinstance(item, dict):
+                logger.debug(f"Skipping item {idx}: not a dict, type={type(item)}")
+                skipped += 1
                 continue
-            filename = item.get("filename") or item.get("name")
+            
+            # Try multiple field names for the filename
+            filename = item.get("filename") or item.get("name") or item.get("item")
             if not filename:
+                logger.debug(f"Skipping item {idx}: no filename field. Keys: {list(item.keys())}")
+                skipped += 1
                 continue
 
             # Parse timestamp from filename
@@ -72,6 +79,8 @@ class ConfigHistoryService:
                 ConfigHistory.revision_id == filename,
             ).first()
             if existing:
+                logger.debug(f"Skipping item {idx} ({filename}): already tracked")
+                skipped += 1
                 continue
 
             row = ConfigHistory(
@@ -83,13 +92,14 @@ class ConfigHistoryService:
                 size_bytes=int(item.get("size") or 0) or None,
             )
             db.add(row)
+            logger.debug(f"Added revision {idx}: {filename} (date: {rev_date})")
             added += 1
 
         if added > 0:
             db.commit()
-            logger.info(f"ConfigHistory sync for {firewall.hostname}: +{added} new revisions stored")
+            logger.info(f"ConfigHistory sync for {firewall.hostname}: +{added} new revisions stored (skipped {skipped})")
         else:
-            logger.info(f"ConfigHistory sync for {firewall.hostname}: no new revisions (all already tracked)")
+            logger.info(f"ConfigHistory sync for {firewall.hostname}: no new revisions (added={added}, skipped={skipped})")
         return added
 
     @staticmethod
