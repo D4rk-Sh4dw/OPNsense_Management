@@ -112,7 +112,11 @@ Respond in this exact JSON format:
   }
 
   async sendOpenAI(prompt) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Support custom OpenAI-compatible endpoints (vLLM, LiteLLM, etc.)
+    const baseURL = this.endpoint || 'https://api.openai.com/v1'
+    const url = `${baseURL}/chat/completions`
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
