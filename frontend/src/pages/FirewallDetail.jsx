@@ -783,12 +783,14 @@ export default function FirewallDetail() {
       {/* Edit Modal */}
       {editOpen && (
         <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+            {/* Header - stays fixed */}
+            <div className="flex-shrink-0 p-6 border-b">
               <h3 className="text-2xl font-black text-gray-900 dark:text-gray-100">Edit Firewall</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{firewall.customer_name}</p>
             </div>
-            <div className="p-6 grid md:grid-cols-2 gap-4 text-sm">
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-6 grid md:grid-cols-2 gap-4 text-sm">
               <Field label="Customer Name" value={editForm.customer_name}
                 onChange={v => setEditForm({...editForm, customer_name: v})} />
               <Field label="Hostname" value={editForm.hostname}
@@ -865,7 +867,8 @@ export default function FirewallDetail() {
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Wird beim Speichern automatisch geocodiert und auf der Karte angezeigt.</p>
               </div>
             </div>
-            <div className="p-6 border-t flex justify-end gap-3">
+            {/* Footer - stays fixed */}
+            <div className="flex-shrink-0 p-6 border-t flex justify-end gap-3">
               <button onClick={() => setEditOpen(false)}
                 className="px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:bg-gray-600 font-semibold">
                 Cancel
@@ -2132,7 +2135,7 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
       {diffModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-auto">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-auto flex flex-col">
-            <div className="sticky top-0 p-6 border-b bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-800 dark:to-indigo-900 flex justify-between items-start rounded-t-lg">
+            <div className="flex-shrink-0 p-6 border-b bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-800 dark:to-indigo-900 flex justify-between items-start rounded-t-lg">
               <div className="text-white flex-1">
                 <h4 className="font-bold text-lg mb-2">📊 Configuration Comparison</h4>
                 <div className="text-sm text-indigo-100 space-y-1">
