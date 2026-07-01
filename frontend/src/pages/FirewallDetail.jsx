@@ -1996,9 +1996,9 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
   if (error) return <div className="p-6 text-red-600">{error}</div>
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-md p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow-md">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 pb-4 mb-4 border-b dark:border-gray-700">
+      <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 p-6 pb-4 border-b dark:border-gray-700 shadow-md">
         <div className="flex justify-between items-center gap-4">
           <h3 className="text-lg font-semibold whitespace-nowrap">Configuration History</h3>
           <div className="flex gap-2 flex-wrap">
@@ -2026,18 +2026,19 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
         </div>
       </div>
 
-      {configHistory.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No config revisions found</div>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead className="bg-gray-100 dark:bg-gray-700 sticky top-14 z-9">
-                <tr>
-                  <th className="px-4 py-2 text-left w-8"></th>
-                  <th className="px-4 py-2 text-left">Select</th>
-                  <th className="px-4 py-2 text-left">Revision</th>
-                  <th className="px-4 py-2 text-left">Date</th>
+      <div className="p-6">
+        {configHistory.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">No config revisions found</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-gray-100 dark:bg-gray-700 sticky top-16 z-20">
+                  <tr>
+                    <th className="px-4 py-2 text-left w-8"></th>
+                    <th className="px-4 py-2 text-left">Select</th>
+                    <th className="px-4 py-2 text-left">Revision</th>
+                    <th className="px-4 py-2 text-left">Date</th>
                   <th className="px-4 py-2 text-left">User</th>
                   <th className="px-4 py-2 text-left">Description</th>
                   <th className="px-4 py-2 text-left">Size</th>
@@ -2124,6 +2125,7 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
           </div>
         </>
       )}
+      </div>
 
       {/* Diff Modal */}
       {diffModal && (
