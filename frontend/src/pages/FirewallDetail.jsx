@@ -2203,30 +2203,67 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
 
               {/* AI Analysis Section */}
               {analysis && (
-                <div className={`mt-4 rounded-lg border-2 p-4 ${aiAnalyzer.getRiskBgColor(analysis.riskLevel)}`}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg">🤖</span>
-                    <h5 className="font-bold">AI Analysis</h5>
-                    <span className={`text-sm font-bold ${aiAnalyzer.getRiskColor(analysis.riskLevel)}`}>
-                      {analysis.riskLevel === 'Low' && '✅ Low Risk'}
-                      {analysis.riskLevel === 'Medium' && '⚠️ Medium Risk'}
-                      {analysis.riskLevel === 'High' && '🔴 High Risk'}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="text-sm font-semibold">Summary:</div>
-                    <div className="text-sm bg-white dark:bg-gray-800 p-2 rounded">
-                      {analysis.summary}
-                    </div>
-                    
-                    {analysis.details && (
-                      <>
-                        <div className="text-sm font-semibold mt-3">Details:</div>
-                        <div className="text-sm bg-white dark:bg-gray-800 p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap break-words">
-                          {analysis.details}
+                <div className="mt-4 rounded-xl overflow-hidden shadow-lg">
+                  {/* Header with Risk Badge */}
+                  <div className={`bg-gradient-to-r ${
+                    analysis.riskLevel === 'Low' ? 'from-green-500 to-green-600' :
+                    analysis.riskLevel === 'Medium' ? 'from-amber-500 to-amber-600' :
+                    'from-red-500 to-red-600'
+                  } p-4`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">🤖</span>
+                        <div>
+                          <h5 className="font-bold text-white text-lg">AI Configuration Analysis</h5>
+                          <p className="text-sm text-white/90">LiteLLM Powered Risk Assessment</p>
                         </div>
-                      </>
+                      </div>
+                      <div className={`px-4 py-2 rounded-full font-bold text-white text-sm backdrop-blur-sm`} style={{
+                        backgroundColor: analysis.riskLevel === 'Low' ? 'rgba(0,0,0,0.2)' :
+                                        analysis.riskLevel === 'Medium' ? 'rgba(0,0,0,0.2)' :
+                                        'rgba(0,0,0,0.2)'
+                      }}>
+                        {analysis.riskLevel === 'Low' && '✅ Low Risk'}
+                        {analysis.riskLevel === 'Medium' && '⚠️ Medium Risk'}
+                        {analysis.riskLevel === 'High' && '🔴 High Risk'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="bg-white dark:bg-gray-900 p-5 space-y-4">
+                    {/* Summary */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">📋</span>
+                        <h6 className="font-semibold text-gray-900 dark:text-white">Summary</h6>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border-l-4" style={{
+                        borderColor: analysis.riskLevel === 'Low' ? '#10b981' :
+                                    analysis.riskLevel === 'Medium' ? '#f59e0b' :
+                                    '#ef4444'
+                      }}>
+                        {analysis.summary}
+                      </p>
+                    </div>
+
+                    {/* Details */}
+                    {analysis.details && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-lg">🔍</span>
+                          <h6 className="font-semibold text-gray-900 dark:text-white">Analysis Details</h6>
+                        </div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700">
+                          <div className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+                            {analysis.details.split('\n').map((line, idx) => (
+                              <div key={idx} className="py-0.5">
+                                {line || <span>&nbsp;</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
