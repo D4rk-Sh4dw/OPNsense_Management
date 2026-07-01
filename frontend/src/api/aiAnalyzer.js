@@ -15,20 +15,43 @@ class AIAnalyzer {
     this.model = import.meta.env.VITE_AI_MODEL || null
     this.endpoint = import.meta.env.VITE_AI_API_ENDPOINT || null
     this.isConfigured = this.validateConfig()
+    
+    // Debug logging
+    if (typeof window !== 'undefined') {
+      console.log('[AIAnalyzer] Config:', {
+        provider: this.provider,
+        model: this.model,
+        hasApiKey: !!this.apiKey,
+        hasEndpoint: !!this.endpoint,
+        isConfigured: this.isConfigured
+      })
+    }
   }
 
   validateConfig() {
-    if (!this.provider) return false
+    if (!this.provider) {
+      console.warn('[AIAnalyzer] No VITE_AI_PROVIDER set')
+      return false
+    }
     
     if (this.provider === 'openai') {
-      return !!(this.apiKey && this.model)
+      const valid = !!(this.apiKey && this.model)
+      if (!valid) console.warn('[AIAnalyzer] OpenAI requires VITE_AI_API_KEY and VITE_AI_MODEL')
+      return valid
     } else if (this.provider === 'anthropic') {
-      return !!(this.apiKey && this.model)
+      const valid = !!(this.apiKey && this.model)
+      if (!valid) console.warn('[AIAnalyzer] Anthropic requires VITE_AI_API_KEY and VITE_AI_MODEL')
+      return valid
     } else if (this.provider === 'ollama') {
-      return !!(this.endpoint && this.model)
+      const valid = !!(this.endpoint && this.model)
+      if (!valid) console.warn('[AIAnalyzer] Ollama requires VITE_AI_API_ENDPOINT and VITE_AI_MODEL')
+      return valid
     } else if (this.provider === 'custom') {
-      return !!(this.endpoint && this.apiKey && this.model)
+      const valid = !!(this.endpoint && this.apiKey && this.model)
+      if (!valid) console.warn('[AIAnalyzer] Custom requires VITE_AI_API_ENDPOINT, VITE_AI_API_KEY, and VITE_AI_MODEL')
+      return valid
     }
+    console.warn(`[AIAnalyzer] Unknown provider: ${this.provider}`)
     return false
   }
 
@@ -251,6 +274,33 @@ Respond in this exact JSON format:
       default:
         return 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800'
     }
+  }
+
+  getStatusMessage() {
+    if (this.isConfigured) {
+      return `✅ Ready (${this.provider.toUpperCase()}: ${this.model})`
+    }
+    
+    if (!this.provider) {
+      return '❌ Set VITE_AI_PROVIDER in .env'
+    }
+    
+    if (this.provider === 'openai') {
+      if (!this.apiKey) return '❌ Missing: VITE_AI_API_KEY'
+      if (!this.model) return '❌ Missing: VITE_AI_MODEL'
+    } else if (this.provider === 'anthropic') {
+      if (!this.apiKey) return '❌ Missing: VITE_AI_API_KEY'
+      if (!this.model) return '❌ Missing: VITE_AI_MODEL'
+    } else if (this.provider === 'ollama') {
+      if (!this.endpoint) return '❌ Missing: VITE_AI_API_ENDPOINT'
+      if (!this.model) return '❌ Missing: VITE_AI_MODEL'
+    } else if (this.provider === 'custom') {
+      if (!this.endpoint) return '❌ Missing: VITE_AI_API_ENDPOINT'
+      if (!this.apiKey) return '❌ Missing: VITE_AI_API_KEY'
+      if (!this.model) return '❌ Missing: VITE_AI_MODEL'
+    }
+    
+    return `❌ Unknown provider: ${this.provider}`
   }
 }
 

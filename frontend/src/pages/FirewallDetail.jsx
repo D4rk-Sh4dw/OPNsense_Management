@@ -2170,7 +2170,7 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
                       ? 'bg-purple-600 text-white hover:bg-purple-700'
                       : 'bg-gray-400 text-white cursor-not-allowed'
                   }`}
-                  title={!aiAnalyzer.isConfigured ? 'AI not configured: Set VITE_AI_PROVIDER in .env' : 'Analyze changes with AI'}
+                  title={aiAnalyzer.getStatusMessage()}
                 >
                   {analysisLoading ? '🔄 Analyzing...' : '🤖 Analyze with AI'}
                 </button>
