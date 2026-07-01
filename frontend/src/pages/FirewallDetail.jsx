@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { firewallsAPI, firewallTagsAPI, backupsAPI, updatesAPI, idsAPI, rulesAPI, vpnAPI, configHistoryAPI } from '../api/client'
+import aiAnalyzer from '../api/aiAnalyzer'
 
 export default function FirewallDetail() {
   const { id } = useParams()
@@ -1880,6 +1881,8 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
   const [expandedRevisionId, setExpandedRevisionId] = useState(null)
   const [expandLoading, setExpandLoading] = useState(false)
   const [expandedDiff, setExpandedDiff] = useState(null)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysis, setAnalysis] = useState(null)
 
   const handleSync = async () => {
     setSyncLoading(true)
@@ -1934,10 +1937,30 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
     try {
       const res = await configHistoryAPI.diff(firewallId, selected.a, selected.b)
       setDiffModal(res.data)
+      setAnalysis(null) // Reset analysis when opening new diff
     } catch (err) {
       alert(`Diff failed: ${err.message}`)
     } finally {
       setDiffLoading(false)
+    }
+  }
+
+  const handleAnalyze = async () => {
+    if (!diffModal) return
+    setAnalysisLoading(true)
+    try {
+      const context = {
+        revisionADate: diffModal.revision_a_date,
+        revisionBDate: diffModal.revision_b_date,
+        firewallIP: configHistory[0]?.firewall_id // Would need better way to get this
+      }
+      const result = await aiAnalyzer.analyzeDiff(diffModal.lines, context)
+      setAnalysis(result)
+    } catch (err) {
+      console.error('Analysis error:', err)
+      alert(`🤖 Analysis failed: ${err.message}`)
+    } finally {
+      setAnalysisLoading(false)
     }
   }
 
@@ -2139,6 +2162,18 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
                 >
                   📋 Copy Diff
                 </button>
+                <button
+                  onClick={handleAnalyze}
+                  disabled={analysisLoading || !aiAnalyzer.isConfigured}
+                  className={`px-3 py-1 rounded text-xs font-semibold ${
+                    aiAnalyzer.isConfigured
+                      ? 'bg-purple-600 text-white hover:bg-purple-700'
+                      : 'bg-gray-400 text-white cursor-not-allowed'
+                  }`}
+                  title={!aiAnalyzer.isConfigured ? 'AI not configured: Set VITE_AI_PROVIDER in .env' : 'Analyze changes with AI'}
+                >
+                  {analysisLoading ? '🔄 Analyzing...' : '🤖 Analyze with AI'}
+                </button>
               </div>
             </div>
 
@@ -2165,6 +2200,37 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
                   )
                 })}
               </div>
+
+              {/* AI Analysis Section */}
+              {analysis && (
+                <div className={`mt-4 rounded-lg border-2 p-4 ${aiAnalyzer.getRiskBgColor(analysis.riskLevel)}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg">🤖</span>
+                    <h5 className="font-bold">AI Analysis</h5>
+                    <span className={`text-sm font-bold ${aiAnalyzer.getRiskColor(analysis.riskLevel)}`}>
+                      {analysis.riskLevel === 'Low' && '✅ Low Risk'}
+                      {analysis.riskLevel === 'Medium' && '⚠️ Medium Risk'}
+                      {analysis.riskLevel === 'High' && '🔴 High Risk'}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold">Summary:</div>
+                    <div className="text-sm bg-white dark:bg-gray-800 p-2 rounded">
+                      {analysis.summary}
+                    </div>
+                    
+                    {analysis.details && (
+                      <>
+                        <div className="text-sm font-semibold mt-3">Details:</div>
+                        <div className="text-sm bg-white dark:bg-gray-800 p-2 rounded max-h-40 overflow-y-auto whitespace-pre-wrap break-words">
+                          {analysis.details}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
