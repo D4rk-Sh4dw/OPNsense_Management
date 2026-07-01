@@ -1883,6 +1883,16 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
   const [expandedDiff, setExpandedDiff] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysis, setAnalysis] = useState(null)
+  const analysisRef = useRef(null)
+
+  // Auto-scroll to analysis when it completes
+  useEffect(() => {
+    if (analysis && analysisRef.current) {
+      setTimeout(() => {
+        analysisRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [analysis])
 
   const handleSync = async () => {
     setSyncLoading(true)
@@ -2203,7 +2213,7 @@ function ConfigHistoryTabPanel({ configHistory, loading, error, onRefresh, onSyn
 
               {/* AI Analysis Section */}
               {analysis && (
-                <div className="mt-4 rounded-xl overflow-hidden shadow-lg">
+                <div ref={analysisRef} className="mt-4 rounded-xl overflow-hidden shadow-lg">
                   {/* Header with Risk Badge */}
                   <div className={`bg-gradient-to-r ${
                     analysis.riskLevel === 'Low' ? 'from-green-500 to-green-600' :
