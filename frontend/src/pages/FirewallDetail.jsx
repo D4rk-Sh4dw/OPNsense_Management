@@ -1713,12 +1713,9 @@ function RulesTabPanel({ rules, aliases, loading, error, onRefresh, subTab, setS
               </table>
               </div>
             </div>
-          )}
     </div>
   )
 }
-
-// ===== VPN Tab Panel =====
 function VPNTabPanel({ openvpn, wireguard, loading, onRefresh, subTab, setSubTab }) {
   const ovpnSessions = useMemo(() => {
     if (!openvpn) return []
