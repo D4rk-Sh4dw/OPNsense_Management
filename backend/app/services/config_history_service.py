@@ -66,38 +66,51 @@ class ConfigHistoryService:
                 skipped += 1
                 continue
             
-            # Try multiple field names for the filename
-            filename = item.get("filename") or item.get("name") or item.get("item")
-            if not filename:
-                logger.debug(f"Skipping item {idx}: no filename field. Keys: {list(item.keys())}")
+            # OPNsense uses 'id' field for the revision identifier
+            revision_id = item.get("id")
+            if not revision_id:
+                logger.debug(f"Skipping item {idx}: no 'id' field. Keys: {list(item.keys())}")
                 skipped += 1
                 continue
 
-            # Parse timestamp from filename
-            rev_date = ConfigHistoryService._parse_revision_date(filename, item)
+            # Parse timestamp: prefer ISO format, fallback to epoch
+            rev_date = None
+            if item.get("time_iso"):
+                try:
+                    rev_date = datetime.fromisoformat(item.get("time_iso").replace("Z", "+00:00"))
+                except Exception as e:
+                    logger.debug(f"Failed to parse time_iso '{item.get('time_iso')}': {e}")
+            
+            if not rev_date and item.get("time"):
+                try:
+                    timestamp = float(item.get("time"))
+                    rev_date = datetime.fromtimestamp(timestamp)
+                except Exception as e:
+                    logger.debug(f"Failed to parse time '{item.get('time')}': {e}")
+            
             if not rev_date:
                 rev_date = get_now()
 
             # Check if revision already exists
             existing = db.query(ConfigHistory).filter(
                 ConfigHistory.firewall_id == firewall.id,
-                ConfigHistory.revision_id == filename,
+                ConfigHistory.revision_id == revision_id,
             ).first()
             if existing:
-                logger.debug(f"Skipping item {idx} ({filename}): already tracked")
+                logger.debug(f"Skipping item {idx} ({revision_id}): already tracked")
                 skipped += 1
                 continue
 
             row = ConfigHistory(
                 firewall_id=firewall.id,
-                revision_id=filename,
+                revision_id=revision_id,
                 revision_date=rev_date,
-                changed_by=item.get("username") or item.get("user"),
-                summary=item.get("description") or filename,
-                size_bytes=int(item.get("size") or 0) or None,
+                changed_by=item.get("username"),
+                summary=item.get("description"),
+                size_bytes=item.get("filesize"),
             )
             db.add(row)
-            logger.debug(f"Added revision {idx}: {filename} (date: {rev_date})")
+            logger.debug(f"Added revision {idx}: {revision_id} (date: {rev_date})")
             added += 1
 
         if added > 0:
